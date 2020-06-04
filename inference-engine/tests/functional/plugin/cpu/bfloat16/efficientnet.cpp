@@ -17,11 +17,17 @@ using namespace InferenceEngine;
 
 namespace LayerTestsDefinitions {
 namespace {
-//    static const size_t inputSize = 40;
-    static const size_t inputSize = 456;
+//    static const size_t inputSize1 = 40, inputSize2 = 40;
+    static const size_t inputSize1 = 456;  // b5
+    static const size_t inputSize2 = 600;  // b7
+
+    static const size_t outChannelsCount1 = 48;  // b5
+    static const size_t outChannelsCount2 = 64;  // b7
+
+    static std::vector<Precision> precVector = { Precision::BF16, Precision::FP32 };
 }  // namespace
 
-class Efficient_b5 : public BasicBF16Test {
+class EfficientNet : public BasicBF16Test {
 protected:
     std::shared_ptr<ngraph::Function> createGraph(InferenceEngine::Precision netPrecision) override {
 //                   Add (FP32) - ScaleShift
@@ -37,7 +43,7 @@ protected:
 //                 DW Conv (BF16)
 //                    |
 //                   Add (fused)
-        size_t outChannelsCount = 48;
+        size_t outChannelsCount = newInputShapes[0];
         auto channelsCount = inputShapes[1];
         ngraph::Shape constShape = { 1, channelsCount, 1, 1 };
         ngraph::Shape outConstShape = { 1, outChannelsCount, 1, 1 };
@@ -174,27 +180,27 @@ protected:
     }
 };
 
-TEST_P(Efficient_b5, CompareWithRefImpl) {
+TEST_P(EfficientNet, CompareWithRefImpl) {
     test();
 };
 
-INSTANTIATE_TEST_CASE_P(FP32_bfloat16_NoReshape, Efficient_b5,
+INSTANTIATE_TEST_CASE_P(Efficientnet_b5_bfloat16_NoReshape, EfficientNet,
                         ::testing::Combine(
                                 ::testing::Values(Precision::FP32),
-                                ::testing::Values(Precision::FP32),
-                                ::testing::Values(SizeVector({ 1, 3, inputSize, inputSize })),
-                                ::testing::Values(SizeVector()),
+                                ::testing::ValuesIn(precVector),
+                                ::testing::Values(SizeVector({ 1, 3, inputSize1, inputSize1 })),
+                                ::testing::Values(SizeVector({ outChannelsCount1 })),  // used instead of newInputShapes
                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-                        Efficient_b5::getTestCaseName);
+                        EfficientNet::getTestCaseName);
 
-INSTANTIATE_TEST_CASE_P(BF16_bfloat16_NoReshape, Efficient_b5,
+INSTANTIATE_TEST_CASE_P(Efficientnet_b7_bfloat16_NoReshape, EfficientNet,
                         ::testing::Combine(
                                 ::testing::Values(Precision::FP32),
-                                ::testing::Values(Precision::BF16),
-                                ::testing::Values(SizeVector({ 1, 3, inputSize, inputSize })),
-                                ::testing::Values(SizeVector()),
+                                ::testing::ValuesIn(precVector),
+                                ::testing::Values(SizeVector({ 1, 3, inputSize2, inputSize2 })),
+                                ::testing::Values(SizeVector({ outChannelsCount2 })), // used instead of newInputShapes
                                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-                        Efficient_b5::getTestCaseName);
+                        EfficientNet::getTestCaseName);
 
 
 }  // namespace LayerTestsDefinitions
