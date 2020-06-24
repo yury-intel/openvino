@@ -398,11 +398,23 @@ public:
         return m_ir_net->serialize();
     }
 
+protected:
+    IRBuilder_v10(const std::string &name, int version) :
+            m_ir_net(IRNet::Create({{"name",    name},
+                                    {"version", std::to_string(version)}})) {
+    }
+
 private:
     size_t m_offset = 0;  // for Constant nodes
 
     std::string m_latest_layer_name;
     std::shared_ptr<IRNet> m_ir_net;
+};
+
+///////////////////////////////// IR v7 ///////////////////////////////
+class IRBuilder_v7 : public IRBuilder_v10 {
+public:
+    explicit IRBuilder_v7(const std::string &name) : IRBuilder_v10(name, 7) {}
 };
 
 ///////////////////////////////// IR v6 ///////////////////////////////

@@ -434,9 +434,13 @@ public:
         auto layerDesc = std::make_shared<LayerDesc>(type, inout, id_manager);
         layersDesc.push_back(layerDesc);
 
-        auto &layer = xml.node("layer").attr("name", name.empty() ? layerDesc->getLayerName() : name).attr("precision",
-                                                                                                           precision)
+        auto &layer = xml.node("layer").attr("name", name.empty() ? layerDesc->getLayerName() : name)
                 .attr("type", type).attr("id", layerDesc->getLayerID());
+
+        if (precision != "UNSPECIFIED") {
+            layer.attr("precision", precision);
+        }
+
         if (params != nullptr) {
             auto &data = layer.node(layerDataName);
             for (auto &kv : *params) {
