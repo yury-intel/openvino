@@ -101,11 +101,12 @@ TEST_P(SplitConcatMemory, ciclicBufferCorrectness) {
     auto exe_net = ie.LoadNetwork(net, "CPU");
     auto inf_reg = exe_net.CreateInferRequest();
 
-    /* cnc1 out  |  mem  | In|
-     *           |===========|
-     * iter_1    | 0 | 0 | 1 |
-     * iter_2    | 0 | 1 | 2 |
-     * iter 3    | 1 | 2 | 3 |
+    /*
+     * cnc1 out  |  mem      | In|
+     *           |===============|
+     * iter_1    | 0 | 0 | 0 | 1 |
+     * iter_2    | 0 | 0 | 1 | 2 |
+     * iter 3    | 0 | 1 | 2 | 3 |
      */
 
     auto i_blob = inf_reg.GetBlob("inp1");
