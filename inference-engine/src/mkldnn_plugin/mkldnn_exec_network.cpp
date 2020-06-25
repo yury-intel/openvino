@@ -10,7 +10,6 @@
 #include "mkldnn_async_infer_request.h"
 #include "mkldnn_infer_request.h"
 #include "mkldnn_memory_state.h"
-#include "nodes/mkldnn_memory_node.hpp"
 #include "bf16transformer.h"
 #include <ie_util_internal.hpp>
 #include <graph_tools.hpp>
@@ -160,8 +159,7 @@ MKLDNNExecNetwork::MKLDNNExecNetwork(const InferenceEngine::ICNNNetwork &network
     if (_graphs.size() == 1) {
         for (auto &node : _graphs.begin()->get()->GetNodes()) {
             if (node->getType() == MemoryInput) {
-                auto memoryNode = dynamic_cast<MKLDNNMemoryInputNode*>(node.get());
-                auto state_store = memoryNode->getStore();
+                auto state_store = node->getChildEdgeAt(0)->getMemoryPtr();
                 auto state_name = node->getName();
 
                 // Remove suffix with pair ID. Internal information.

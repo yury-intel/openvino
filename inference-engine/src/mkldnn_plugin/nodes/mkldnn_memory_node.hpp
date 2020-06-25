@@ -69,6 +69,7 @@ class MKLDNNMemoryOutputNode : public MKLDNNNode, public MKLDNNMemoryNode {
     ~MKLDNNMemoryOutputNode() override;
     void getSupportedDescriptors() override;
     void initSupportedPrimitiveDescriptors() override;
+    const MKLDNNEdgePtr getChildEdgeAt(size_t idx) const override;
     void createPrimitive() override {}
     void execute(mkldnn::stream strm) override;
     bool created() const override {
@@ -78,7 +79,6 @@ class MKLDNNMemoryOutputNode : public MKLDNNNode, public MKLDNNMemoryNode {
     void setInputNode(MKLDNNNode* node) override {
         inputNode = node;
     }
-
  private:
     /**
      * @brief keeps reference to input sibling node
@@ -97,15 +97,9 @@ public:
     bool created() const override {
         return getType() == MemoryInput;
     }
-    void execute(mkldnn::stream strm) override;
-
-    void createPrimitive() override;
 
     void setInputNode(MKLDNNNode* node) override {}
-    void storeState(const MKLDNNMemory& mem);
-    MKLDNNMemoryPtr getStore();
  private:
-    MKLDNNMemoryPtr dataStore;
     static Register<MKLDNNMemoryInputNode> reg;
     MKLDNNMemoryNodeVirtualEdge::Holder* holder = nullptr;
 };
