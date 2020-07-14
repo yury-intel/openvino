@@ -55,7 +55,6 @@ void LayerTestsCommon::Compare(const std::vector<std::uint8_t> &expected, const 
 }
 
 void LayerTestsCommon::Compare(const InferenceEngine::Blob::Ptr &expected, const InferenceEngine::Blob::Ptr &actual) {
-
     auto get_raw_buffer = [] (const InferenceEngine::Blob::Ptr &blob) {
         auto memory = InferenceEngine::as<InferenceEngine::MemoryBlob>(blob);
         IE_ASSERT(memory);

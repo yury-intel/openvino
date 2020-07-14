@@ -59,7 +59,7 @@ void fill_data_with_broadcast(InferenceEngine::Blob::Ptr& blob, size_t axis, std
  * @param new_shape new one shape for viwe blob
  * @return new one blob view
  */
-InferenceEngine::Blob::Ptr make_reshape_view (const InferenceEngine::Blob::Ptr blob, InferenceEngine::SizeVector new_shape);
+InferenceEngine::Blob::Ptr make_reshape_view(const InferenceEngine::Blob::Ptr blob, InferenceEngine::SizeVector new_shape);
 
 /**
  * Fill blob with single value for all elements

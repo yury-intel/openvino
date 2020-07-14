@@ -6,6 +6,7 @@
 #include <mkldnn_types.h>
 #include <mkldnn_extension_utils.h>
 #include "mkldnn_memory_node.hpp"
+#include "common/simple_copy.h"
 
 using namespace mkldnn;
 using namespace MKLDNNPlugin;
@@ -31,8 +32,6 @@ void MKLDNNMemoryOutputNode::initSupportedPrimitiveDescriptors() {
         return;
 
     InferenceEngine::Precision precision = getCnnLayer()->insData[0].lock()->getPrecision();
-    if (precision != InferenceEngine::Precision::FP32)
-        precision = InferenceEngine::Precision::FP32;
     auto inputDataType = MKLDNNExtensionUtils::IEPrecisionToDataType(precision);
     InferenceEngine::LayerConfig config;
     config.dynBatchSupport = true;
@@ -51,15 +50,15 @@ const MKLDNNEdgePtr MKLDNNMemoryOutputNode::getChildEdgeAt(size_t idx) const {
 }
 
 void MKLDNNMemoryOutputNode::execute(mkldnn::stream strm)  {
-    auto& srcMemory = getParentEdgeAt(0)->getMemory();
+    const uint8_t *src_ptr = getParentEdgeAt(0)->getBlob()->cbuffer().as<const uint8_t *>() +
+                             getParentEdgeAt(0)->getMemory().GetDescriptor().data.layout_desc.blocking.offset_padding;
+    uint8_t *dst_ptr = getChildEdgeAt(0)->getBlob()->cbuffer().as<uint8_t *>() +
+                       getChildEdgeAt(0)->getMemory().GetDescriptor().data.layout_desc.blocking.offset_padding;
 
-    const float *src_ptr = reinterpret_cast<const float*>(srcMemory.GetData()) +
-            srcMemory.GetDescriptor().data.layout_desc.blocking.offset_padding;
-    float *dst_ptr = reinterpret_cast<float*>(getChildEdgeAt(0)->getMemory().GetData()) +
-            getChildEdgeAt(0)->getMemory().GetDescriptor().data.layout_desc.blocking.offset_padding;
-
+    size_t src_size = getParentEdgeAt(0)->getBlob()->byteSize();
+    size_t dest_size = getChildEdgeAt(0)->getBlob()->byteSize();
     // TODO: this can be eliminated by completely removing MKLDNN memory output NODE, to fuse it with output of prev layer
-    memcpy(dst_ptr, src_ptr, srcMemory.GetSize());
+    simple_copy(dst_ptr, dest_size, src_ptr, src_size);
 }
 
 #if defined (COMPILED_CPU_MKLDNN_INPUT_NODE)

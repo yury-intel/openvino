@@ -130,19 +130,19 @@ TEST_P(SplitConcatMemory, ciclicBufferCorrectness) {
 
     // iteration 1
     fill_data_const(i_blob, 1);
-    fill_by_quarter(o_blob_ref, {1,1,1,2});
+    fill_by_quarter(o_blob_ref, {1, 1, 1, 2});
     inf_reg.Infer();
     Compare(o_blob_ref, o_blob);
 
     // iteration 2
     fill_data_const(i_blob, 2);
-    fill_by_quarter(o_blob_ref, {1,1,2,3});
+    fill_by_quarter(o_blob_ref, {1, 1, 2, 3});
     inf_reg.Infer();
     Compare(o_blob_ref, o_blob);
 
     // iteration 3
     fill_data_const(i_blob, 3);
-    fill_by_quarter(o_blob_ref, {1,2,3,4});
+    fill_by_quarter(o_blob_ref, {1, 2, 3, 4});
     inf_reg.Infer();
     Compare(o_blob_ref, o_blob);
 }

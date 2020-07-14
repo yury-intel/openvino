@@ -131,7 +131,7 @@ void fill_data_with_broadcast(InferenceEngine::Blob::Ptr& blob, size_t axis, std
     fill_data_with_broadcast(blob, values_blob);
 }
 
-InferenceEngine::Blob::Ptr make_reshape_view (const InferenceEngine::Blob::Ptr blob, InferenceEngine::SizeVector new_shape) {
+InferenceEngine::Blob::Ptr make_reshape_view(const InferenceEngine::Blob::Ptr blob, InferenceEngine::SizeVector new_shape) {
     using InferenceEngine::TensorDesc;
     auto new_size = std::accumulate(new_shape.begin(), new_shape.end(), 1, std::multiplies<size_t>());
     IE_ASSERT(new_size == blob->size());
@@ -195,6 +195,5 @@ void fill_data_const(InferenceEngine::Blob::Ptr& blob, const std::vector<float> 
 
 void fill_data_const(InferenceEngine::Blob::Ptr& blob, float val) {
     fill_data_const(blob, std::vector<float> {val});
-
 }
 }  // namespace CommonTestUtils
