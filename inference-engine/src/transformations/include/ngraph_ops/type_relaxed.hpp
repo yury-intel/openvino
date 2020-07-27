@@ -13,6 +13,8 @@
 #include "ngraph/op/op.hpp"
 #include "ngraph/op/reshape.hpp"
 
+#include <ngraph/opsets/opset1.hpp>
+
 namespace ngraph {
 namespace op {
 
