@@ -61,6 +61,19 @@ public:
             shape,
             params.updatePrecisions,
             testParams.expected);
+
+        auto pr = actualFunction->get_parameters()[0]->get_element_type();
+        size_t byteVectorSize = shape_size(shape);
+        if (pr == ngraph::element::f32) {
+            byteVectorSize *= 4;
+        } else if (pr == ngraph::element::f16) {
+            byteVectorSize *= 2;
+        }
+
+        for (auto inputCount = actualFunction->get_parameters().size(); inputCount != 0; inputCount--) {
+            std::vector<std::uint8_t> inputVector(byteVectorSize);
+            referenceInputs.push_back(inputVector);
+        }
     }
 
     static std::string getTestCaseName(testing::TestParamInfo<ConvolutionTransformationParams> obj) {
@@ -82,6 +95,13 @@ TEST_P(ConvolutionTransformation, CompareFunctions) {
     actualFunction->validate_nodes_and_infer_types();
     auto res = compare_functions(referenceFunction, actualFunction, true);
     ASSERT_TRUE(res.first) << res.second;
+}
+
+TEST_P(ConvolutionTransformation, CompareOutputs) {
+//    actualFunction->validate_nodes_and_infer_types();
+
+    auto res = compareResults(actualFunction, referenceFunction);
+    ASSERT_TRUE(res) << "Hello world\n";
 }
 
 const std::vector<ngraph::element::Type> precisions = {

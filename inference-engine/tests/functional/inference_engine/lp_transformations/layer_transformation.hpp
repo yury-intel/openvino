@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <functional_test_utils/blob_utils.hpp>
 #include "common_test_utils/test_common.hpp"
 #include "transformations/low_precision/layer_transformation.hpp"
 #include "transformations/low_precision/transformation_context.hpp"
@@ -14,7 +15,9 @@ typedef std::tuple<
     ngraph::Shape,
     ngraph::pass::low_precision::LayerTransformation::Params> LayerTransformationParams;
 
-class LayerTransformation : public CommonTestUtils::TestsCommon {
+class LayerTransformation : public FuncTestUtils::ComparableNGTestCommon {
+    void Infer() override {}
+
 public:
     static ngraph::pass::low_precision::LayerTransformation::Params createParamsU8U8();
     static ngraph::pass::low_precision::LayerTransformation::Params createParamsU8I8();
@@ -27,6 +30,7 @@ public:
         const ngraph::element::Type& type,
         const ngraph::Shape& shape,
         const ngraph::pass::low_precision::LayerTransformation::Params& params);
+    bool compareResults(std::shared_ptr<ngraph::Function> f1, std::shared_ptr<ngraph::Function> f2);
 
 protected:
     void transform(std::shared_ptr<ngraph::Function> function);

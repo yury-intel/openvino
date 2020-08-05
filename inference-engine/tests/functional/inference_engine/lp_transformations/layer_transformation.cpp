@@ -49,7 +49,25 @@ ngraph::pass::low_precision::LayerTransformation::Params LayerTransformation::cr
         { ngraph::element::u8, ngraph::element::i8 },
         { ngraph::element::i8 });
 }
+bool LayerTransformation::compareResults(std::shared_ptr<ngraph::Function> f1, std::shared_ptr<ngraph::Function> f2) {
+    auto type = actualFunction->get_parameters()[0]->get_element_type();
+    if (type == ::ngraph::element::f32) {
+        FillByteVectorAsTyped<float>(referenceInputs);
+    } else if (type == ::ngraph::element::i32) {
+        FillByteVectorAsTyped<int>(referenceInputs);
+    }
+//    FillByteVectorRandomly(referenceInputs);
+    auto res1 = CalculateRefs(f1, referenceInputs);
+    auto res2 = CalculateRefs(f2, referenceInputs);
 
+    auto vec1 = getTypedVector<float>(res1);
+    auto vec2 = getTypedVector<float>(res2);
+
+    // get real typed vectors
+    CompareTypedVectors<float>(vec1, vec2);
+//    CompareBytes(res1, res2, InferenceEngine::Precision::FP32);
+    return true;
+}
 std::string LayerTransformation::toString(const ngraph::pass::low_precision::LayerTransformation::Params& params) {
     std::ostringstream result;
     result <<
