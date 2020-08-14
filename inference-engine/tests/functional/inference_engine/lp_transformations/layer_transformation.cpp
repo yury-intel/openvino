@@ -158,11 +158,7 @@ bool LayerTransformation::compareResults(std::shared_ptr<ngraph::Function> f1, s
     auto pr = actualFunction->get_parameters()[0]->get_element_type();
     auto sh = actualFunction->get_parameters()[0]->get_partial_shape().to_shape();
     size_t byteVectorSize = shape_size(sh);
-    if (pr == ngraph::element::f32) {
-        byteVectorSize *= 4;
-    } else if (pr == ngraph::element::f16) {
-        byteVectorSize *= 2;
-    }
+
     const auto &parameters = actualFunction->get_parameters();
     for (const auto &parameter : parameters) {
         const auto &parameterIndex = actualFunction->get_parameter_index(parameter);
