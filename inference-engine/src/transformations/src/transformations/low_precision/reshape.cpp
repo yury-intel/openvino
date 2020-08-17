@@ -93,7 +93,10 @@ size_t getFirstChangedChannel(const Shape& shape1, const Shape& shape2) {
 }
 
 bool ReshapeTransformation::canBeTransformed(const TransformationContext& context, std::shared_ptr<Node> op) const {
-    const FakeQuantizeDequantization dequantization = NetworkHelper::getDequantization(op, 0);
+    const FakeQuantizeDequantization dequantization = NetworkHelper::getDequantization(op);
+    if (dequantization.empty()) {
+        return false;
+    }
 
     const Shape subtractShape = dequantization.subtract == nullptr ? Shape{} : dequantization.subtract->get_input_node_ptr(1)->get_output_shape(0);
     const Shape multiplyShape = dequantization.multiply == nullptr ? Shape{} : dequantization.multiply->get_input_node_ptr(1)->get_output_shape(0);
@@ -101,8 +104,7 @@ bool ReshapeTransformation::canBeTransformed(const TransformationContext& contex
         return true;
     }
 
-    const size_t index = NetworkHelper::getInputIndex(op->get_input_node_shared_ptr(0), op);
-    const auto inputShape = op->get_input_node_shared_ptr(0)->get_output_shape(index);
+    const auto inputShape = op->get_input_shape(0);
     const auto outputShape = op->get_output_shape(0);
 
     Shape subtractShapeWithBatch = subtractShape;
