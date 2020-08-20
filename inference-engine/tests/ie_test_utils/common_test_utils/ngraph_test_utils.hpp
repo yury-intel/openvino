@@ -13,7 +13,6 @@
 #include <ngraph/pass/pass.hpp>
 
 #include "test_common.hpp"
-#include "functional_test_utils/skip_tests_config.hpp"
 
 #define DYN ngraph::Dimension::dynamic()
 
@@ -77,28 +76,3 @@ public:
 private:
     injection_callback m_callback;
 };
-
-namespace FuncTestUtils {
-class IComparableTestCommon : public CommonTestUtils::TestsCommon {
-protected:
-    std::vector<std::vector<std::uint8_t>> byteInputData;
-    std::vector<std::vector<std::uint8_t>> actualByteOutput;
-    std::vector<std::vector<std::uint8_t>> expectedByteOutput;
-    float threshold = 1e-2f;
-
-    virtual void setInput() {}
-    virtual void preproc() {}
-    virtual void getActualResults() {}
-    virtual void getExpectedResults() {}
-    virtual void postproc() {}
-    virtual void validate() {}
-    void run() {
-        setInput();
-        preproc();
-        getActualResults();
-        getExpectedResults();
-        postproc();
-        validate();
-    }
-};
-}  // namespace FuncTestUtils
