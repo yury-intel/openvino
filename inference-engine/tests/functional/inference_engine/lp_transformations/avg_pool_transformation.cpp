@@ -79,6 +79,11 @@ TEST_P(AvgPoolTransformation, CompareFunctions) {
     ASSERT_TRUE(res.first) << res.second;
 }
 
+TEST_P(AvgPoolTransformation, CompareOutputs) {
+    auto res = compareResults(actualFunction, referenceFunction);
+    ASSERT_TRUE(res);
+}
+
 const std::vector<ngraph::element::Type> precisions = {
     ngraph::element::f32,
     // ngraph::element::f16

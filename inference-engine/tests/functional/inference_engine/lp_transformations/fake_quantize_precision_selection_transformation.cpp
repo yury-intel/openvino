@@ -133,12 +133,19 @@ TEST_P(FakeQuantizePrecisionSelectionTransformation, CompareFunctions) {
     ASSERT_TRUE(res.first) << res.second;
 }
 
+TEST_P(FakeQuantizePrecisionSelectionTransformation, CompareOutputs) {
+    auto res = compareResults(actualFunction, referenceFunction);
+    ASSERT_TRUE(res);
+}
+
 const std::vector<ngraph::element::Type> precisions = {
     ngraph::element::f32,
     // ngraph::element::f16
 };
 
-const std::vector<bool> updatePrecisions = { true, false };
+const std::vector<bool> updatePrecisions = {
+//        true,
+        false };
 
 const std::vector<FakeQuantizePrecisionSelectionTransformationTestValues> fakeQuantizeTransformationTestValues = {
     {

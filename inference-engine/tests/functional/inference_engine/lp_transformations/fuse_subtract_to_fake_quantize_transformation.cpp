@@ -83,6 +83,11 @@ TEST_P(FuseSubtractToFakeQuantizeTransformation, CompareFunctions) {
     ASSERT_TRUE(res.first) << res.second;
 }
 
+TEST_P(FuseSubtractToFakeQuantizeTransformation, CompareOutputs) {
+    auto res = compareResults(actualFunction, referenceFunction);
+    ASSERT_TRUE(res);
+}
+
 const std::vector<FuseSubtractToFakeQuantizeTransformationTestValues> testValues = {
     {
         Shape{1, 3, 16, 16},

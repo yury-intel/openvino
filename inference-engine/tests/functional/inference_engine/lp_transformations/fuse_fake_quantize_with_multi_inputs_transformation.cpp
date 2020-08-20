@@ -95,6 +95,11 @@ TEST_P(FuseFakeQuantizeWithMultiInputsTransformation, CompareFunctions) {
     ASSERT_TRUE(res.first) << res.second;
 }
 
+TEST_P(FuseFakeQuantizeWithMultiInputsTransformation, CompareOutputs) {
+    auto res = compareResults(actualFunction, referenceFunction);
+    ASSERT_TRUE(res);
+}
+
 const std::vector<FuseFakeQuantizeTransformationTestValues> testValues = {
     // Multiply
     {
