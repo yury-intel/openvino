@@ -63,6 +63,10 @@ void LayerTestsCommon::Compare(const std::vector<std::uint8_t> &expected, const 
         case InferenceEngine::Precision::U64:
             Compare<uint64_t>(reinterpret_cast<const uint64_t *>(expectedBuffer), reinterpret_cast<const uint64_t *>(actualBuffer), size, 0);
             break;
+        case InferenceEngine::Precision::BF16:
+            Compare(reinterpret_cast<const ngraph::bfloat16 *>(expectedBuffer),
+                    reinterpret_cast<const ngraph::bfloat16 *>(actualBuffer), size, ngraph::bfloat16(threshold));
+            break;
         default:
             FAIL() << "Comparator for " << precision << " precision isn't supported";
     }
@@ -143,6 +147,10 @@ std::vector<std::vector<std::uint8_t>> LayerTestsCommon::CalculateRefs() {
     // nGraph interpreter does not support f16
     // IE converts f16 to f32
     ngraph::pass::ConvertPrecision<ngraph::element::Type_t::f16, ngraph::element::Type_t::f32>().run_on_function(function);
+
+    // The same idea for bf16
+    ngraph::pass::ConvertPrecision<ngraph::element::Type_t::bf16, ngraph::element::Type_t::f32>().run_on_function(function);
+
     function->validate_nodes_and_infer_types();
     auto referenceInputs = std::vector<std::vector<std::uint8_t>>(inputs.size());
     for (std::size_t i = 0; i < inputs.size(); ++i) {
@@ -168,10 +176,11 @@ std::vector<std::vector<std::uint8_t>> LayerTestsCommon::CalculateRefs() {
         }
     }
 
+    const auto& inType = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(inPrc);
     std::vector<std::vector<std::uint8_t>> expectedOutputs;
     switch (refMode) {
         case INTERPRETER: {
-            expectedOutputs = ngraph::helpers::interpreterFunction(function, referenceInputs, convertType);
+            expectedOutputs = ngraph::helpers::interpreterFunction(function, referenceInputs, inType, convertType);
             break;
         }
         case CONSTANT_FOLDING: {
@@ -191,7 +200,7 @@ std::vector<std::vector<std::uint8_t>> LayerTestsCommon::CalculateRefs() {
             m.register_pass<ngraph::pass::ConvertSpaceToBatch>();
             m.register_pass<ngraph::pass::ConvertBatchToSpace>();
             m.run_passes(cloned_function);
-            expectedOutputs = ngraph::helpers::interpreterFunction(cloned_function, referenceInputs, convertType);
+            expectedOutputs = ngraph::helpers::interpreterFunction(cloned_function, referenceInputs, inType, convertType);
             break;
         }
     }
