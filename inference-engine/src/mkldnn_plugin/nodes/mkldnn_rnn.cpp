@@ -336,10 +336,11 @@ void MKLDNNRNN::createPrimitive() {
     auto weightsIt = getCnnLayer()->blobs.find("weights");
     if (weightsIt == getCnnLayer()->blobs.end())
         THROW_IE_EXCEPTION << errorPrefix << " does not have weights blob.";
-    if (weightsIt->second->getTensorDesc().getPrecision() != Precision::FP32)
+    if (weightsIt->second->getTensorDesc().getPrecision() != Precision::FP32 && weightsIt->second->getTensorDesc().getPrecision() != Precision::BF16)
         THROW_IE_EXCEPTION << errorPrefix << " has invalid weights precision: " << weightsIt->second->getTensorDesc().getPrecision();
     if (getCnnLayer()->blobs.find("biases") != getCnnLayer()->blobs.end()
-            && getCnnLayer()->blobs["biases"]->getTensorDesc().getPrecision() != Precision::FP32)
+            && getCnnLayer()->blobs["biases"]->getTensorDesc().getPrecision() != Precision::FP32
+            && getCnnLayer()->blobs["biases"]->getTensorDesc().getPrecision() != Precision::BF16)
         THROW_IE_EXCEPTION << errorPrefix << " has invalid biases precision: " << getCnnLayer()->blobs["biases"]->getTensorDesc().getPrecision();
 
     std::shared_ptr<rnn_forward::desc> d = descs[0];
