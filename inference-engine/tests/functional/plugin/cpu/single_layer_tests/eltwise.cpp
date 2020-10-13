@@ -13,9 +13,7 @@ namespace CPULayerTestsDefinitions {
 
 typedef std::tuple<
         LayerTestsDefinitions::EltwiseTestParams,
-        CPUSpecificParams,
-        Precision, // CNN input precision
-        Precision> // CNN output precision
+        CPUSpecificParams>
         EltwiseLayerCPUTestParamsSet;
 
 class EltwiseLayerCPUTest : public testing::WithParamInterface<EltwiseLayerCPUTestParamsSet>,
@@ -24,15 +22,11 @@ public:
     static std::string getTestCaseName(testing::TestParamInfo<EltwiseLayerCPUTestParamsSet> obj) {
         LayerTestsDefinitions::EltwiseTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
-        Precision inputPrecision, outputPrecision;
-        std::tie(basicParamsSet, cpuParams, inputPrecision, outputPrecision) = obj.param;
+        std::tie(basicParamsSet, cpuParams) = obj.param;
 
         std::ostringstream result;
         result << LayerTestsDefinitions::EltwiseLayerTest::getTestCaseName(testing::TestParamInfo<LayerTestsDefinitions::EltwiseTestParams>(
                 basicParamsSet, 0));
-
-        result << "_" << "CNNinpPrc=" << inputPrecision.name();
-        result << "_" << "CNNoutPrc=" << outputPrecision.name();
 
         result << CPUTestsBase::getTestCaseName(cpuParams);
 
@@ -43,7 +37,7 @@ protected:
     void SetUp() {
         LayerTestsDefinitions::EltwiseTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
-        std::tie(basicParamsSet, cpuParams, inPrc, outPrc) = this->GetParam();
+        std::tie(basicParamsSet, cpuParams) = this->GetParam();
 
         std::vector<std::vector<size_t>> inputShapes;
         InferenceEngine::Precision netPrecision;
@@ -51,7 +45,7 @@ protected:
         CommonTestUtils::OpType opType;
         ngraph::helpers::EltwiseTypes eltwiseType;
         std::map<std::string, std::string> additional_config;
-        std::tie(inputShapes, eltwiseType, secondaryInputType, opType, netPrecision, targetDevice, additional_config) = basicParamsSet;
+        std::tie(inputShapes, eltwiseType, secondaryInputType, opType, netPrecision, inPrc, outPrc, inLayout, targetDevice, additional_config) = basicParamsSet;
         std::tie(inFmts, outFmts, priority, selectedType) = cpuParams;
         auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
 
@@ -177,11 +171,12 @@ const auto params_4D_FP32 = ::testing::Combine(
             ::testing::ValuesIn(secondaryInputTypes),
             ::testing::ValuesIn(opTypes),
             ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Layout::ANY),
             ::testing::Values(CommonTestUtils::DEVICE_CPU),
             ::testing::Values(additional_config)),
-        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D)),
-        ::testing::Values(InferenceEngine::Precision::FP32),
-        ::testing::Values(InferenceEngine::Precision::FP32));
+        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D)));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_4D_FP32_MemOrder, EltwiseLayerCPUTest, params_4D_FP32, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -192,11 +187,12 @@ const auto params_4D_FP32_emptyCPUSpec = ::testing::Combine(
                 ::testing::ValuesIn(secondaryInputTypes),
                 ::testing::ValuesIn(opTypes),
                 ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Layout::ANY),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU),
                 ::testing::Values(additional_config)),
-        ::testing::Values(emptyCPUSpec),
-        ::testing::Values(InferenceEngine::Precision::FP32),
-        ::testing::Values(InferenceEngine::Precision::FP32));
+        ::testing::Values(emptyCPUSpec));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_4D_FP32, EltwiseLayerCPUTest, params_4D_FP32_emptyCPUSpec, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -207,11 +203,12 @@ const auto params_4D_BF16 = ::testing::Combine(
                 ::testing::ValuesIn(secondaryInputTypes),
                 ::testing::ValuesIn(opTypes),
                 ::testing::Values(InferenceEngine::Precision::BF16),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::Values(InferenceEngine::Layout::ANY),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU),
                 ::testing::Values(additional_config)),
-        ::testing::Values(emptyCPUSpec),
-        ::testing::ValuesIn(bf16InpOutPrc),
-        ::testing::ValuesIn(bf16InpOutPrc));
+        ::testing::Values(emptyCPUSpec));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_4D_BF16_MemOrder, EltwiseLayerCPUTest, params_4D_BF16, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -222,11 +219,12 @@ const auto params_4D_BF16_emptyCPUSpec = ::testing::Combine(
                 ::testing::ValuesIn(secondaryInputTypes),
                 ::testing::ValuesIn(opTypes),
                 ::testing::Values(InferenceEngine::Precision::BF16),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::Values(InferenceEngine::Layout::ANY),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU),
                 ::testing::Values(additional_config)),
-        ::testing::Values(emptyCPUSpec),
-        ::testing::ValuesIn(bf16InpOutPrc),
-        ::testing::ValuesIn(bf16InpOutPrc));
+        ::testing::Values(emptyCPUSpec));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_4D_BF16, EltwiseLayerCPUTest, params_4D_BF16_emptyCPUSpec, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -250,11 +248,12 @@ const auto params_5D_FP32 = ::testing::Combine(
             ::testing::ValuesIn(secondaryInputTypes),
             ::testing::ValuesIn(opTypes),
             ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Layout::ANY),
             ::testing::Values(CommonTestUtils::DEVICE_CPU),
             ::testing::Values(additional_config)),
-        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_5D)),
-        ::testing::Values(InferenceEngine::Precision::FP32),
-        ::testing::Values(InferenceEngine::Precision::FP32));
+        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_5D)));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_5D_FP32_MemOrder, EltwiseLayerCPUTest, params_5D_FP32, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -265,11 +264,12 @@ const auto params_5D_BF16 = ::testing::Combine(
                 ::testing::ValuesIn(secondaryInputTypes),
                 ::testing::ValuesIn(opTypes),
                 ::testing::Values(InferenceEngine::Precision::BF16),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::Values(InferenceEngine::Layout::ANY),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU),
                 ::testing::Values(additional_config)),
-        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_5D)),
-        ::testing::ValuesIn(bf16InpOutPrc),
-        ::testing::ValuesIn(bf16InpOutPrc));
+        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_5D)));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_5D_BF16_MemOrder, EltwiseLayerCPUTest, params_5D_BF16, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -280,11 +280,12 @@ const auto params_5D_FP32_emptyCPUSpec = ::testing::Combine(
                 ::testing::ValuesIn(secondaryInputTypes),
                 ::testing::ValuesIn(opTypes),
                 ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Layout::ANY),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU),
                 ::testing::Values(additional_config)),
-        ::testing::Values(emptyCPUSpec),
-        ::testing::Values(InferenceEngine::Precision::FP32),
-        ::testing::Values(InferenceEngine::Precision::FP32));
+        ::testing::Values(emptyCPUSpec));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_5D_FP32, EltwiseLayerCPUTest, params_5D_FP32_emptyCPUSpec, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -295,11 +296,12 @@ const auto params_5D_BF16_emptyCPUSpec = ::testing::Combine(
                 ::testing::ValuesIn(secondaryInputTypes),
                 ::testing::ValuesIn(opTypes),
                 ::testing::Values(InferenceEngine::Precision::BF16),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::Values(InferenceEngine::Layout::ANY),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU),
                 ::testing::Values(additional_config)),
-        ::testing::Values(emptyCPUSpec),
-        ::testing::ValuesIn(bf16InpOutPrc),
-        ::testing::ValuesIn(bf16InpOutPrc));
+        ::testing::Values(emptyCPUSpec));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_5D_BF16, EltwiseLayerCPUTest, params_5D_BF16_emptyCPUSpec, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -319,11 +321,12 @@ const auto params_4D_FP32_Blocked_Planar = ::testing::Combine(
             ::testing::Values(ngraph::helpers::InputLayerType::CONSTANT),
             ::testing::ValuesIn(opTypes),
             ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Layout::ANY),
             ::testing::Values(CommonTestUtils::DEVICE_CPU),
             ::testing::Values(additional_config)),
-        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D_Blocked_Planar)),
-        ::testing::Values(InferenceEngine::Precision::FP32),
-        ::testing::Values(InferenceEngine::Precision::FP32));
+        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D_Blocked_Planar)));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_4D_FP32_Blocked_Planar, EltwiseLayerCPUTest, params_4D_FP32_Blocked_Planar, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -344,11 +347,12 @@ const auto params_4D_FP32_Planar_Blocked = ::testing::Combine(
             ::testing::Values(ngraph::helpers::InputLayerType::CONSTANT),
             ::testing::ValuesIn(opTypes),
             ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Layout::ANY),
             ::testing::Values(CommonTestUtils::DEVICE_CPU),
             ::testing::Values(additional_config)),
-        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D_Planar_Blocked)),
-        ::testing::Values(InferenceEngine::Precision::FP32),
-        ::testing::Values(InferenceEngine::Precision::FP32));
+        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_4D_Planar_Blocked)));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_4D_FP32_Planar_Blocked, EltwiseLayerCPUTest, params_4D_FP32_Planar_Blocked, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -369,11 +373,12 @@ const auto params_5D_FP32_Blocked_Planar = ::testing::Combine(
             ::testing::Values(ngraph::helpers::InputLayerType::CONSTANT),
             ::testing::ValuesIn(opTypes),
             ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Precision::FP32),
+            ::testing::Values(InferenceEngine::Layout::ANY),
             ::testing::Values(CommonTestUtils::DEVICE_CPU),
             ::testing::Values(additional_config)),
-        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_5D_Blocked_Planar)),
-        ::testing::Values(InferenceEngine::Precision::FP32),
-        ::testing::Values(InferenceEngine::Precision::FP32));
+        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_5D_Blocked_Planar)));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_5D_FP32_Blocked_Planar, EltwiseLayerCPUTest, params_5D_FP32_Blocked_Planar, EltwiseLayerCPUTest::getTestCaseName);
 
@@ -394,11 +399,12 @@ const auto params_5D_FP32_Planar_Blocked = ::testing::Combine(
                 ::testing::Values(ngraph::helpers::InputLayerType::CONSTANT),
                 ::testing::ValuesIn(opTypes),
                 ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Layout::ANY),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU),
                 ::testing::Values(additional_config)),
-        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_5D_Planar_Blocked)),
-        ::testing::Values(InferenceEngine::Precision::FP32),
-        ::testing::Values(InferenceEngine::Precision::FP32));
+        ::testing::ValuesIn(filterCPUSpecificParams(cpuParams_5D_Planar_Blocked)));
 
 INSTANTIATE_TEST_CASE_P(CompareWithRefs_5D_FP32_Planar_Blocked, EltwiseLayerCPUTest, params_5D_FP32_Planar_Blocked, EltwiseLayerCPUTest::getTestCaseName);
 

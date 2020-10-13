@@ -14,9 +14,7 @@ namespace CPULayerTestsDefinitions  {
 
 typedef std::tuple<
         LayerTestsDefinitions::LogicalTestParams,
-        CPUSpecificParams,
-        Precision, // CNNNetwork input precision
-        Precision> // CNNNetwork output precision
+        CPUSpecificParams>
 LogicalLayerCPUTestParamSet;
 
 class LogicalLayerCPUTest : public testing::WithParamInterface<LogicalLayerCPUTestParamSet>,
@@ -25,15 +23,11 @@ public:
     static std::string getTestCaseName(testing::TestParamInfo<LogicalLayerCPUTestParamSet> obj) {
         LayerTestsDefinitions::LogicalTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
-        Precision inputPrecision, outputPrecision;
-        std::tie(basicParamsSet, cpuParams, inputPrecision, outputPrecision) = obj.param;
+        std::tie(basicParamsSet, cpuParams) = obj.param;
 
         std::ostringstream result;
         result << LayerTestsDefinitions::LogicalLayerTest::getTestCaseName(testing::TestParamInfo<LayerTestsDefinitions::LogicalTestParams>(
                 basicParamsSet, 0));
-
-        result << "_" << "CNNInpPrc=" << inputPrecision.name();
-        result << "_" << "CNNOutPrc=" << outputPrecision.name();
 
         result << CPUTestsBase::getTestCaseName(cpuParams);
 
@@ -44,7 +38,7 @@ protected:
     void SetUp() override {
         LayerTestsDefinitions::LogicalTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
-        std::tie(basicParamsSet, cpuParams, inPrc, outPrc) = this->GetParam();
+        std::tie(basicParamsSet, cpuParams) = this->GetParam();
 
         std::tie(inFmts, outFmts, priority, selectedType) = cpuParams;
 
@@ -68,15 +62,15 @@ protected:
         selectedType = isaType + "_" + strExpectedPrc;
 
         LayerTestsDefinitions::LogicalParams::InputShapesTuple inputShapes;
-        InferenceEngine::Precision inputsPrecision;
         ngraph::helpers::LogicalTypes logicalOpType;
         ngraph::helpers::InputLayerType secondInputType;
         InferenceEngine::Precision netPrecision;
         std::string targetName;
         std::map<std::string, std::string> additional_config;
-        std::tie(inputShapes, inputsPrecision, logicalOpType, secondInputType, netPrecision, targetDevice, additional_config) = basicParamsSet;
+        std::tie(inputShapes, logicalOpType, secondInputType, netPrecision, inPrc, outPrc,
+                 inLayout, outLayout, targetDevice, additional_config) = basicParamsSet;
 
-        auto ngInputsPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(inputsPrecision);
+        auto ngInputsPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(Precision::BOOL); // Because ngraph supports only boolean input for logical ops
         configuration.insert(additional_config.begin(), additional_config.end());
 
         auto inputs = ngraph::builder::makeParams(ngInputsPrc, {inputShapes.first});
@@ -148,28 +142,30 @@ std::vector<Precision> bf16InpOutPrc = {Precision::BF16, Precision::FP32};
 const auto LogicalTestParams = ::testing::Combine(
         ::testing::Combine(
             ::testing::ValuesIn(LayerTestsDefinitions::LogicalLayerTest::combineShapes(inputShapes)),
-            ::testing::ValuesIn(inputsPrecisions),
             ::testing::ValuesIn(logicalOpTypes),
             ::testing::ValuesIn(secondInputTypes),
             ::testing::Values(Precision::BF16),
+            ::testing::ValuesIn(bf16InpOutPrc),
+            ::testing::ValuesIn(bf16InpOutPrc),
+            ::testing::Values(Layout::ANY),
+            ::testing::Values(Layout::ANY),
             ::testing::Values(CommonTestUtils::DEVICE_CPU),
             ::testing::Values(additional_config)),
-        ::testing::Values(emptyCPUSpec),
-        ::testing::ValuesIn(bf16InpOutPrc),
-        ::testing::ValuesIn(bf16InpOutPrc));
+        ::testing::Values(emptyCPUSpec));
 
 const auto LogicalTestParamsNot = ::testing::Combine(
         ::testing::Combine(
                 ::testing::ValuesIn(LayerTestsDefinitions::LogicalLayerTest::combineShapes(inputShapesNot)),
-                ::testing::ValuesIn(inputsPrecisions),
                 ::testing::Values(ngraph::helpers::LogicalTypes::LOGICAL_NOT),
                 ::testing::Values(ngraph::helpers::InputLayerType::CONSTANT),
                 ::testing::Values(Precision::BF16),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::Values(Layout::ANY),
+                ::testing::Values(Layout::ANY),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU),
                 ::testing::Values(additional_config)),
-        ::testing::Values(emptyCPUSpec),
-        ::testing::ValuesIn(bf16InpOutPrc),
-        ::testing::ValuesIn(bf16InpOutPrc));
+        ::testing::Values(emptyCPUSpec));
 
 
 INSTANTIATE_TEST_CASE_P(Logical_Eltwise_CPU_BF16, LogicalLayerCPUTest, LogicalTestParams, LogicalLayerCPUTest::getTestCaseName);

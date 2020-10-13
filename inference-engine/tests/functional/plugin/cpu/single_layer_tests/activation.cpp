@@ -13,9 +13,7 @@ namespace CPULayerTestsDefinitions  {
 
 typedef std::tuple<
         LayerTestsDefinitions::activationParams,
-        CPUSpecificParams,
-        Precision, // input precision
-        Precision> // output precision
+        CPUSpecificParams>
         ActivationLayerCPUTestParamSet;
 
 class ActivationLayerCPUTest : public testing::WithParamInterface<ActivationLayerCPUTestParamSet>,
@@ -25,15 +23,11 @@ public:
     static std::string getTestCaseName(const testing::TestParamInfo<ActivationLayerCPUTestParamSet> &obj) {
         LayerTestsDefinitions::activationParams basicParamsSet;
         CPUSpecificParams cpuParams;
-        Precision inputPrecision, outputPrecision;
-        std::tie(basicParamsSet, cpuParams, inputPrecision, outputPrecision) = obj.param;
+        std::tie(basicParamsSet, cpuParams) = obj.param;
 
         std::ostringstream result;
         result << LayerTestsDefinitions::ActivationLayerTest::getTestCaseName(testing::TestParamInfo<LayerTestsDefinitions::activationParams>(
                 basicParamsSet, 0));
-
-        result << "_" << "CNNinpPrc=" << inputPrecision.name();
-        result << "_" << "CNNoutPrc=" << outputPrecision.name();
 
         result << CPUTestsBase::getTestCaseName(cpuParams);
 
@@ -47,7 +41,7 @@ protected:
     void SetUp() override {
         LayerTestsDefinitions::activationParams basicParamsSet;
         CPUSpecificParams cpuParams;
-        std::tie(basicParamsSet, cpuParams, inPrc, outPrc) = this->GetParam();
+        std::tie(basicParamsSet, cpuParams) = this->GetParam();
 
         std::tie(inFmts, outFmts, priority, selectedType) = cpuParams;
 
@@ -73,7 +67,7 @@ protected:
         InferenceEngine::Precision netPrecision;
         std::pair<std::vector<size_t>, std::vector<size_t>> shapes;
         std::pair<ActivationTypes, std::vector<float>> activationDecl;
-        std::tie(activationDecl, netPrecision, shapes, targetDevice) = basicParamsSet;
+        std::tie(activationDecl, netPrecision, inPrc, outPrc, inLayout, outLayout, shapes, targetDevice) = basicParamsSet;
 
         // Withing the test scope we don't need any implicit bf16 optimisations, so let's run the network as is.
         configuration.insert({PluginConfigParams::KEY_ENFORCE_BF16, PluginConfigParams::NO});
@@ -132,21 +126,27 @@ const auto basicCases = ::testing::Combine(
         ::testing::Combine(
             ::testing::ValuesIn(CommonTestUtils::combineParams(activationTypes)),
             ::testing::Values(Precision::BF16),
+            ::testing::ValuesIn(bf16InpOutPrc),
+            ::testing::ValuesIn(bf16InpOutPrc),
+            ::testing::Values(InferenceEngine::Layout::ANY),
+            ::testing::Values(InferenceEngine::Layout::ANY),
             ::testing::ValuesIn(CommonTestUtils::combineParams(basic)),
             ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-        ::testing::Values(CPUSpecificParams({}, {}, {}, "jit_avx512_BF16")),
-        ::testing::ValuesIn(bf16InpOutPrc),
-        ::testing::ValuesIn(bf16InpOutPrc));
+        ::testing::Values(emptyCPUSpec)
+);
 
 const auto basicPreluCases = ::testing::Combine(
         ::testing::Combine(
                 ::testing::ValuesIn(CommonTestUtils::combineParams(activationParamTypes)),
                 ::testing::Values(Precision::BF16),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::ValuesIn(bf16InpOutPrc),
+                ::testing::Values(InferenceEngine::Layout::ANY),
+                ::testing::Values(InferenceEngine::Layout::ANY),
                 ::testing::ValuesIn(CommonTestUtils::combineParams(preluBasic)),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-        ::testing::Values(CPUSpecificParams({}, {}, {}, "jit_avx512_BF16")),
-        ::testing::ValuesIn(bf16InpOutPrc),
-        ::testing::ValuesIn(bf16InpOutPrc));
+        ::testing::Values(emptyCPUSpec)
+);
 
 INSTANTIATE_TEST_CASE_P(Activation_Eltwise_CPU_BF16, ActivationLayerCPUTest, basicCases, ActivationLayerCPUTest::getTestCaseName);
 INSTANTIATE_TEST_CASE_P(Activation_Eltwise_Prelu_CPU_BF16, ActivationLayerCPUTest, basicPreluCases, ActivationLayerCPUTest::getTestCaseName);
