@@ -40,8 +40,11 @@ std::ostream &operator<<(std::ostream &os, const ReductionType &m) {
         case LogicalAnd:
             os << "LogicalAnd";
             break;
-        case LogicalXor:
-            os << "LogicalXor";
+        case L1:
+            os << "L1";
+            break;
+        case L2:
+            os << "L2";
             break;
     }
     return os;
