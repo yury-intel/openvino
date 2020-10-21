@@ -51,19 +51,19 @@ public:
             trans_std_ = layer->GetParamAsFloat("trans_std", 1);
 
             if (no_trans_) {
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
                 addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN)},
                           {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
+                          {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
                 addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
                           {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
                 addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN)},
                           {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
             } else {
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
                 addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN),
                                   DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN),
+                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
                 addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN),
                                   DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
                 addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN),
