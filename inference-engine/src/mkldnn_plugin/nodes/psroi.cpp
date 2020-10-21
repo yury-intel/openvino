@@ -50,42 +50,13 @@ public:
             part_size_ = layer->GetParamAsInt("part_size", 1);
             trans_std_ = layer->GetParamAsFloat("trans_std", 1);
 
+            bool isBf16Input = layer->insData[0].lock()->getTensorDesc().getPrecision() == Precision::BF16;
             if (no_trans_) {
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
-
-                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
-                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::BF16), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
-                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
-                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::BF16), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32), DataConfigurator(ConfLayout::PLN)},
+                          {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32)});
             } else {
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
-
-                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::FP32), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
-                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::BF16), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
-                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::FP32), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
-                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::BF16), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32), DataConfigurator(ConfLayout::PLN),
+                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32)});
             }
         } catch (InferenceEngine::details::InferenceEngineException &ex) {
             errorMsg = ex.what();
@@ -119,9 +90,6 @@ public:
 
         auto src_data = reinterpret_cast<const inputType *>(bottom_data_fp32);
         auto dst_data = reinterpret_cast<outputType *>(dst_data_fp32);
-
-        int block_size = inputs[0]->getTensorDesc().getLayout() == Layout::BLOCKED ?
-                         inputs[0]->getTensorDesc().getBlockingDesc().getBlockDims()[4] : 1;
 
         int real_rois = 0;
         for (; real_rois < nn; real_rois++) {
@@ -204,12 +172,11 @@ public:
                             if (bin_area) {
                                 int gc = (c * group_size_ + h) * group_size_ + w;
                                 const auto *bottom_data =
-                                        src_data + ((roi_batch_ind * channels + (gc / block_size) * block_size) * height * width);
+                                        src_data + ((roi_batch_ind * channels + gc) * height * width);
                                 float out_sum = 0.0f;
                                 for (int hh = hstart; hh < hend; ++hh)
                                     for (int ww = wstart; ww < wend; ++ww) {
-                                        int out_ind = (hh * width + ww) * block_size + gc % block_size;
-                                        out_sum = out_sum + InputToAccConversion()(bottom_data[out_ind]);
+                                        out_sum += InputToAccConversion()(bottom_data[hh * width + ww]);
                                     }
                                 dst_data[index] = AccToOutputConversion()(out_sum / bin_area);
                             }
@@ -223,7 +190,7 @@ public:
                                     float box_ymax = roi_start_h + (bin_y + 1) * (roi_height / spatial_bins_y_);
 
                                     size_t gc = c + (bin_y*spatial_bins_x_ + bin_x)*nc;
-                                    size_t src_idx = (roi_batch_ind * channels + (gc / block_size) * block_size) * height * width;
+                                    size_t src_idx = (roi_batch_ind * channels + gc) * height * width;
                                     const auto *bottom_data = src_data + src_idx;
 
                                     float height_scale = nh > 1 ? (box_ymax - box_ymin) * (height - 1) / (pooled_height_ - 1)
@@ -248,15 +215,10 @@ public:
                                         if (bottom_y_index > height - 1)
                                             bottom_y_index = height - 1;
 
-                                        auto top_left_index = (top_y_index * width + left_x_index) * block_size + gc % block_size;
-                                        auto top_right_index = (top_y_index * width + right_x_index) * block_size + gc % block_size;
-                                        auto bottom_left_index = (bottom_y_index * width + left_x_index) * block_size + gc % block_size;
-                                        auto bottom_right_index = (bottom_y_index * width + right_x_index) * block_size + gc % block_size;
-
-                                        const float top_left = InputToAccConversion()(bottom_data[top_left_index]);
-                                        const float top_right = InputToAccConversion()(bottom_data[top_right_index]);
-                                        const float bottom_left = InputToAccConversion()(bottom_data[bottom_left_index]);
-                                        const float bottom_right = InputToAccConversion()(bottom_data[bottom_right_index]);
+                                        const float top_left = InputToAccConversion()(bottom_data[top_y_index * width + left_x_index]);
+                                        const float top_right = InputToAccConversion()(bottom_data[top_y_index * width + right_x_index]);
+                                        const float bottom_left = InputToAccConversion()(bottom_data[bottom_y_index * width + left_x_index]);
+                                        const float bottom_right = InputToAccConversion()(bottom_data[bottom_y_index * width + right_x_index]);
 
                                         const float top = top_left + (top_right - top_left) * (in_x - left_x_index);
                                         const float bottom = bottom_left + (bottom_right - bottom_left) * (in_x - left_x_index);
@@ -353,8 +315,7 @@ public:
     }
 
     template <typename inputType, class InputToAccConversion>
-    inline float bilinear_interp(const inputType* data, const float x, const float y, const int width,
-            const int block_size = 1, const int gc = 0) {
+    inline float bilinear_interp(const inputType* data, const float x, const float y, const int width) {
         int x1 = static_cast<int>(std::floor(x));
         int x2 = static_cast<int>(std::ceil(x));
         int y1 = static_cast<int>(std::floor(y));
@@ -362,10 +323,10 @@ public:
         float dist_x = x - x1;
         float dist_y = y - y1;
 
-        float value11 = InputToAccConversion()(data[(y1 * width + x1) * block_size + gc % block_size]);
-        float value12 = InputToAccConversion()(data[(y2 * width + x1) * block_size + gc % block_size]);
-        float value21 = InputToAccConversion()(data[(y1 * width + x2) * block_size + gc % block_size]);
-        float value22 = InputToAccConversion()(data[(y2 * width + x2) * block_size + gc % block_size]);
+        float value11 = InputToAccConversion()(data[y1 * width + x1]);
+        float value12 = InputToAccConversion()(data[y2 * width + x1]);
+        float value21 = InputToAccConversion()(data[y1 * width + x2]);
+        float value22 = InputToAccConversion()(data[y2 * width + x2]);
         float value = (1 - dist_x) * (1 - dist_y) * value11 + (1 - dist_x) * dist_y * value12
                       + dist_x * (1 - dist_y) * value21 + dist_x * dist_y * value22;
         return value;
