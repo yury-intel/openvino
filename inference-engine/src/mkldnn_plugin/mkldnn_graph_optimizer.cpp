@@ -156,8 +156,8 @@ void MKLDNNGraphOptimizer::ApplyImplSpecificGraphOptimizations(MKLDNNGraph &grap
     DropConvertReorder(graph);
     graph.RemoveDroppedNodes();
 
-    ChangeConvertToReorder(graph);
-    graph.RemoveDroppedNodes();
+//    ChangeConvertToReorder(graph);
+//    graph.RemoveDroppedNodes();
 #endif
 
     graph.RemoveDroppedEdges();
@@ -2193,10 +2193,10 @@ void MKLDNNGraphOptimizer::ChangeConvertToReorder(MKLDNNGraph& graph) {
         }
         auto inputPrecision = convertCandidate->getCnnLayer()->insData[0].lock()->getPrecision();
         auto outputPrecision = convertCandidate->getCnnLayer()->outData[0]->getPrecision();
-        if (std::find(continuousPrecisions.begin(), continuousPrecisions.end(), inputPrecision) == continuousPrecisions.end() ||
-                std::find(continuousPrecisions.begin(), continuousPrecisions.end(), outputPrecision) == continuousPrecisions.end()) {
-            continue;
-        }
+//        if (std::find(continuousPrecisions.begin(), continuousPrecisions.end(), inputPrecision) == continuousPrecisions.end() ||
+//                std::find(continuousPrecisions.begin(), continuousPrecisions.end(), outputPrecision) == continuousPrecisions.end()) {
+//            continue;
+//        }
         std::unordered_set<std::string> uniqueLayerNames;
         for (auto node : graph.GetNodes()) {
             uniqueLayerNames.insert(node->getCnnLayer()->name);
@@ -2249,7 +2249,6 @@ void MKLDNNGraphOptimizer::ChangeConvertToReorder(MKLDNNGraph& graph) {
             childEdge->drop();
             graph.DropNode(convertCandidate);
         }
-
     }
 }
 #endif

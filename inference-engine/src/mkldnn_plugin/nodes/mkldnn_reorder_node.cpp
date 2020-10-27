@@ -15,6 +15,9 @@ using namespace MKLDNNPlugin;
 
 MKLDNNReorderNode::MKLDNNReorderNode(const InferenceEngine::CNNLayerPtr& layer, const mkldnn::engine& eng, MKLDNNWeightsSharing::Ptr &w_cache) :
         MKLDNNNode(layer, eng, w_cache) {
+    if (!layer->insData.empty()) {
+        setDescs(layer->insData[0].lock()->getTensorDesc(), layer->outData[0]->getTensorDesc());
+    }
 }
 
 void MKLDNNReorderNode::getSupportedDescriptors() {
@@ -165,7 +168,7 @@ const std::vector<impl_desc_type>& MKLDNNReorderNode::getPrimitivesPriority() {
 }
 
 bool MKLDNNReorderNode::created() const {
-    return getType() == Reorder;
+    return getType() == Reorder || getType() == Convert;
 }
 
 void MKLDNNReorderNode::execute(mkldnn::stream strm) {
@@ -195,3 +198,4 @@ void MKLDNNReorderNode::setDynamicBatchLim(int lim) {
     }
 }
 REG_MKLDNN_PRIM_FOR(MKLDNNReorderNode, Reorder);
+REG_MKLDNN_PRIM_FOR(MKLDNNReorderNode, Convert);
