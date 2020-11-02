@@ -16,16 +16,9 @@ LayerTestsCommon::LayerTestsCommon() : threshold(1e-2f) {
 void LayerTestsCommon::Run() {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
 
-    ConfigurePlugin();
     LoadNetwork();
     Infer();
     Validate();
-}
-
-LayerTestsCommon::~LayerTestsCommon() {
-    if (!configuration.empty()) {
-        PluginCache::get().reset();
-    }
 }
 
 InferenceEngine::Blob::Ptr LayerTestsCommon::GenerateInput(const InferenceEngine::InputInfo &info) const {
@@ -51,6 +44,10 @@ void LayerTestsCommon::Compare(const std::vector<std::uint8_t> &expected, const 
         case InferenceEngine::Precision::I32:
             Compare(reinterpret_cast<const std::int32_t *>(expectedBuffer),
                     reinterpret_cast<const std::int32_t *>(actualBuffer), size, 0);
+            break;
+        case InferenceEngine::Precision::BF16:
+            Compare(reinterpret_cast<const ngraph::bfloat16 *>(expectedBuffer),
+                    reinterpret_cast<const ngraph::bfloat16 *>(actualBuffer), size, ngraph::bfloat16(threshold));
             break;
         default:
             FAIL() << "Comparator for " << precision << " precision isn't supported";
@@ -83,12 +80,6 @@ void LayerTestsCommon::Compare(const InferenceEngine::Blob::Ptr &expected, const
     }
 }
 
-void LayerTestsCommon::ConfigurePlugin() {
-    if (!configuration.empty()) {
-        core->SetConfig(configuration, targetDevice);
-    }
-}
-
 void LayerTestsCommon::ConfigureNetwork() const {
     for (const auto &in : cnnNetwork.getInputsInfo()) {
         if (inLayout != InferenceEngine::Layout::ANY) {
@@ -112,7 +103,7 @@ void LayerTestsCommon::ConfigureNetwork() const {
 void LayerTestsCommon::LoadNetwork() {
     cnnNetwork = InferenceEngine::CNNNetwork{function};
     ConfigureNetwork();
-    executableNetwork = core->LoadNetwork(cnnNetwork, targetDevice);
+    executableNetwork = core->LoadNetwork(cnnNetwork, targetDevice, configuration);
 }
 
 void LayerTestsCommon::Infer() {
@@ -137,6 +128,10 @@ std::vector<std::vector<std::uint8_t>> LayerTestsCommon::CalculateRefs() {
     // nGraph interpreter does not support f16
     // IE converts f16 to f32
     ngraph::pass::ConvertPrecision<ngraph::element::Type_t::f16, ngraph::element::Type_t::f32>().run_on_function(function);
+
+    // The same idea for bf16
+    ngraph::pass::ConvertPrecision<ngraph::element::Type_t::bf16, ngraph::element::Type_t::f32>().run_on_function(function);
+
     function->validate_nodes_and_infer_types();
     auto referenceInputs = std::vector<std::vector<std::uint8_t>>(inputs.size());
     for (std::size_t i = 0; i < inputs.size(); ++i) {
@@ -159,16 +154,17 @@ std::vector<std::vector<std::uint8_t>> LayerTestsCommon::CalculateRefs() {
         ieOutPrc = actualOutputs[0]->getTensorDesc().getPrecision();
     }
 
-    const auto &convertType = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(ieOutPrc);
+    const auto& inType = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(inPrc);
+    const auto& outConvertType = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(ieOutPrc);
     std::vector<std::vector<std::uint8_t>> expectedOutputs;
     switch (refMode) {
         case INTERPRETER: {
-            expectedOutputs = ngraph::helpers::interpreterFunction(function, referenceInputs, convertType);
+            expectedOutputs = ngraph::helpers::interpreterFunction(function, referenceInputs, inType, outConvertType);
             break;
         }
         case CONSTANT_FOLDING: {
             const auto &foldedFunc = ngraph::helpers::foldFunction(function, referenceInputs);
-            expectedOutputs = ngraph::helpers::getConstData(foldedFunc, convertType);
+            expectedOutputs = ngraph::helpers::getConstData(foldedFunc, outConvertType);
             break;
         }
         case IE: {
@@ -183,7 +179,7 @@ std::vector<std::vector<std::uint8_t>> LayerTestsCommon::CalculateRefs() {
             m.register_pass<ngraph::pass::ConvertSpaceToBatch>();
             m.register_pass<ngraph::pass::ConvertBatchToSpace>();
             m.run_passes(cloned_function);
-            expectedOutputs = ngraph::helpers::interpreterFunction(cloned_function, referenceInputs, convertType);
+            expectedOutputs = ngraph::helpers::interpreterFunction(cloned_function, referenceInputs, inType, outConvertType);
             break;
         }
     }

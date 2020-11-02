@@ -379,6 +379,9 @@ CNNLayer::Ptr NodeConverter<ngraph::op::Convert>::createLayer(const std::shared_
     case Precision::FP16:
         precision_str = "FP16";
         break;
+    case Precision::BF16:
+        precision_str = "BF16";
+        break;
     case Precision::FP32:
         precision_str = "FP32";
         break;
@@ -619,7 +622,11 @@ CNNLayer::Ptr NodeConverter<ngraph::op::v1::Maximum>::createLayer(const std::sha
 
 template <>
 CNNLayer::Ptr NodeConverter<ngraph::op::v1::Minimum>::createLayer(const std::shared_ptr<ngraph::Node>& layer) const {
-    THROW_IE_EXCEPTION << "Minimum operation should be decomposed";
+    LayerParams params = {layer->get_friendly_name(), "Eltwise",
+                          details::convertPrecision(layer->get_output_element_type(0))};
+    auto res = std::make_shared<InferenceEngine::EltwiseLayer>(params);
+    res->params["operation"] = "min";
+    return res;
 }
 
 template <>
