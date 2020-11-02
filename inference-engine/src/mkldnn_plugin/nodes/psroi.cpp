@@ -12,6 +12,9 @@
 #include "ie_parallel.hpp"
 #include "c_types_map.hpp"
 #include "bfloat16_utils.hpp"
+#include "utils/bfloat16.hpp"
+
+using namespace MKLDNNPlugin;
 
 namespace InferenceEngine {
 namespace Extensions {
@@ -63,25 +66,7 @@ public:
         }
     }
 
-    struct Bf16ToFp32 {
-        inline float operator()(mkldnn_bfloat16_t value) {
-            auto res = mkldnn::impl::cpu::bf16_cvt_utils::cvt_bfloat16_to_float(value);
-            return res;
-        }
-    };
-    struct Fp32ToBf16 {
-        inline mkldnn_bfloat16_t operator()(float value) {
-            auto res = mkldnn::impl::cpu::bf16_cvt_utils::cvt_float_to_bfloat16(value);
-            return res;
-        }
-    };
-    struct Fp32Eq {
-        inline float operator()(float value) {
-            return value;
-        }
-    };
-
-    template <typename inputType, typename outputType, class InputToAccConversion, class AccToOutputConversion>
+    template <typename inputType, typename outputType>
     StatusCode executeSpecified(std::vector<Blob::Ptr>& inputs, std::vector<Blob::Ptr>& outputs,
                                 ResponseDesc *resp) {
         float* dst_data_fp32 = outputs[0]->buffer();
@@ -151,7 +136,7 @@ public:
                 for (int h = 0; h < nh; h++) {
                     for (int w = 0; w < nw; w++) {
                         size_t index = n*nc*nh*nw + c*nh*nw + h*nw + w;
-                        dst_data[index] = AccToOutputConversion()(0.0f);
+                        dst_data[index] = 0.0f;
 
                         if (mode_ == "average") {
                             float bin_size_h = roi_height / static_cast<float>(pooled_height_);
@@ -176,9 +161,9 @@ public:
                                 float out_sum = 0.0f;
                                 for (int hh = hstart; hh < hend; ++hh)
                                     for (int ww = wstart; ww < wend; ++ww) {
-                                        out_sum += InputToAccConversion()(bottom_data[hh * width + ww]);
+                                        out_sum += bottom_data[hh * width + ww];
                                     }
-                                dst_data[index] = AccToOutputConversion()(out_sum / bin_area);
+                                dst_data[index] = out_sum / bin_area;
                             }
                         } else if (mode_ == "bilinear") {
                             float accum = 0.0f;
@@ -215,10 +200,10 @@ public:
                                         if (bottom_y_index > height - 1)
                                             bottom_y_index = height - 1;
 
-                                        const float top_left = InputToAccConversion()(bottom_data[top_y_index * width + left_x_index]);
-                                        const float top_right = InputToAccConversion()(bottom_data[top_y_index * width + right_x_index]);
-                                        const float bottom_left = InputToAccConversion()(bottom_data[bottom_y_index * width + left_x_index]);
-                                        const float bottom_right = InputToAccConversion()(bottom_data[bottom_y_index * width + right_x_index]);
+                                        const float top_left = bottom_data[top_y_index * width + left_x_index];
+                                        const float top_right = bottom_data[top_y_index * width + right_x_index];
+                                        const float bottom_left = bottom_data[bottom_y_index * width + left_x_index];
+                                        const float bottom_right = bottom_data[bottom_y_index * width + right_x_index];
 
                                         const float top = top_left + (top_right - top_left) * (in_x - left_x_index);
                                         const float bottom = bottom_left + (bottom_right - bottom_left) * (in_x - left_x_index);
@@ -228,7 +213,7 @@ public:
                                 }
                             }
                             accum /= num_bins;
-                            dst_data[index] = AccToOutputConversion()(accum);
+                            dst_data[index] = accum;
                         } else if (mode_ == "bilinear_deformable") {
                             // Compute w and h at bottom
                             float bin_size_h = roi_height / static_cast<float>(pooled_height_);
@@ -268,13 +253,13 @@ public:
                                     w1 = static_cast<float>((std::min)((std::max)(static_cast<double>(w1), 0.0), width - 1.0));
                                     h1 = static_cast<float>((std::min)((std::max)(static_cast<double>(h1), 0.0), height - 1.0));
                                     int c1 = static_cast<int>((c * group_size_ + gh) * group_size_ + gw);
-                                    float val = bilinear_interp<inputType, InputToAccConversion>(offset_bottom_data +
+                                    float val = bilinear_interp<inputType>(offset_bottom_data +
                                             c1 * height * width, w1, h1, width);
                                     sum += val;
                                     count++;
                                 }
                             }
-                            dst_data[index] = AccToOutputConversion()(count == 0 ? 0.0f : sum / count);
+                            dst_data[index] = count == 0 ? 0.0f : sum / count;
                         }
                     }
                 }
@@ -284,7 +269,7 @@ public:
         for (int n = real_rois; n < nn; n++) {
             parallel_for3d(nc, nh, nw, [&](int c, int h, int w) {
                 int index = n * nc * nh * nw + c * nh * nw + h * nw + w;
-                dst_data[index] = AccToOutputConversion()(0.0f);
+                dst_data[index] = 0.0f;
             });
         }
 
@@ -301,20 +286,20 @@ public:
         auto outputPrec = outputs[0]->getTensorDesc().getPrecision();
         if (inputPrec == Precision::BF16) {
             if (outputPrec == Precision::BF16) {
-                return executeSpecified<mkldnn_bfloat16_t, mkldnn_bfloat16_t, Bf16ToFp32, Fp32ToBf16>(inputs, outputs, resp);
+                return executeSpecified<bfloat16, bfloat16>(inputs, outputs, resp);
             } else {
-                return executeSpecified<mkldnn_bfloat16_t, float, Bf16ToFp32, Fp32Eq>(inputs, outputs, resp);
+                return executeSpecified<bfloat16, float>(inputs, outputs, resp);
             }
         } else {
             if (outputPrec == Precision::BF16) {
-                return executeSpecified<float, mkldnn_bfloat16_t, Fp32Eq, Fp32ToBf16>(inputs, outputs, resp);
+                return executeSpecified<float, bfloat16>(inputs, outputs, resp);
             } else {
-                return executeSpecified<float, float, Fp32Eq, Fp32Eq>(inputs, outputs, resp);
+                return executeSpecified<float, float>(inputs, outputs, resp);
             }
         }
     }
 
-    template <typename inputType, class InputToAccConversion>
+    template <typename inputType>
     inline float bilinear_interp(const inputType* data, const float x, const float y, const int width) {
         int x1 = static_cast<int>(std::floor(x));
         int x2 = static_cast<int>(std::ceil(x));
@@ -323,10 +308,10 @@ public:
         float dist_x = x - x1;
         float dist_y = y - y1;
 
-        float value11 = InputToAccConversion()(data[y1 * width + x1]);
-        float value12 = InputToAccConversion()(data[y2 * width + x1]);
-        float value21 = InputToAccConversion()(data[y1 * width + x2]);
-        float value22 = InputToAccConversion()(data[y2 * width + x2]);
+        float value11 = data[y1 * width + x1];
+        float value12 = data[y2 * width + x1];
+        float value21 = data[y1 * width + x2];
+        float value22 = data[y2 * width + x2];
         float value = (1 - dist_x) * (1 - dist_y) * value11 + (1 - dist_x) * dist_y * value12
                       + dist_x * (1 - dist_y) * value21 + dist_x * dist_y * value22;
         return value;
