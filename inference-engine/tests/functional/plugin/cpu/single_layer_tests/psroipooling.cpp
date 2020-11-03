@@ -57,43 +57,24 @@ protected:
         float spatialScale;
         size_t groupSize;
         size_t outputDim;
-        size_t regionsCount;
+        std::vector<float> proposalsVector;
         std::string noDeformableMode;
         std::vector<size_t> inputShape;
 
         std:tie(outputDim, groupSize, spatialScale, spatialBinX, spatialBinY,
-                regionsCount, mode, inputShape) = psroiParams;
+                proposalsVector, mode, inputShape) = psroiParams;
         std::shared_ptr<ngraph::opset1::Constant> coords = nullptr;
-        auto createSimilarRegions = [&] (float* data, size_t size) {
-            size_t mod5 = 0;
-            for (size_t i = 0; i < size; i++) {
-                switch (mod5) {
-                    case 0:
-                        data[i] = 1.0f;
-                        break;
-                    case 1:
-                    case 2:
-                        data[i] = 4.0;
-                        break;
-                    case 3:
-                    case 4:
-                        data[i] = 7.0;
-                        break;
-                }
-                mod5 = (mod5 + 1) % 5;
-            }
-        };
-        ngraph::Shape coordsShape = { regionsCount, 5 };
-        std::vector<float> coordsFP32;
-        coordsFP32.resize(regionsCount * 5);
-        createSimilarRegions(coordsFP32.data(), coordsFP32.size());
-        coords = std::make_shared<ngraph::opset1::Constant>(ntype, coordsShape, coordsFP32.data());
+        ngraph::Shape coordsShape = { proposalsVector.size(), 5 };
+        coords = std::make_shared<ngraph::opset1::Constant>(ntype, coordsShape, proposalsVector.data());
 
-        auto psroi = std::make_shared<ngraph::opset1::PSROIPooling>(input1, coords, output_dim, group_size,
+        auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
+        auto params = ngraph::builder::makeParams(ngPrc, {inputShape});
+
+        auto psroi = std::make_shared<ngraph::opset1::PSROIPooling>(params[0], coords, output_dim, group_size,
                                                                           spatial_scale, spatial_bins_x, spatial_bins_y, mode);
         psroi->get_rt_info() = getCPUInfo();
-        const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(interpolate)};
-        function = std::make_shared<ngraph::Function>(results, params, "interpolate");
+        const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(psroi)};
+        function = std::make_shared<ngraph::Function>(results, params, "psroipooling");
     }
 private:
     void PsroiValidate() {
@@ -168,13 +149,17 @@ const std::vector<std::vector<size_t>> inputShapeVector = {
         SizeVector({ 1, 3240, 40, 40 })
 };
 
+const std::vector<std::vector<float>> proposalsVector = {
+        { 0, 4, 4, 7, 7 }
+};
+
 const auto psroipoolingNonDeformableParams = ::testing::Combine(
         ::testing::ValuesIn(outputDimVector),  // channels count of output
         ::testing::ValuesIn(groupSizeVector),  // offset for iteration across output pulled bins
         ::testing::ValuesIn(spatialScaleXVector),  // scale for given region considering actual input size
         ::testing::ValuesIn(spatialBinXVector),  // bin's column count
         ::testing::ValuesIn(spatialBinYVector),  // bin's row count
-        ::testing::ValuesIn(regionsCountVector),  // regions count
+        ::testing::ValuesIn(proposalsVector),  // coordinate vector: batch id, left_top_x, left_top_y, right_bottom_x, right_bottom_y
         ::testing::ValuesIn(noDeformableModeVector),  // mode for non-deformable psroi
         ::testing::ValuesIn(inputShapeVector),  // feature map shape
 );
