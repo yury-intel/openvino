@@ -9,6 +9,7 @@
 #include <vector>
 #include "ie_parallel.hpp"
 #include "ie_precision.hpp"
+#include "ngraph/type/bfloat16.hpp"
 
 namespace InferenceEngine {
 namespace Extensions {
@@ -40,13 +41,13 @@ public:
             DataConfig dataIn;
             const SizeVector& ins_dims = layer->insData[0].lock()->getTensorDesc().getDims();
             dataIn.desc = TensorDesc(layer->insData[0].lock()->getTensorDesc().getPrecision(), ins_dims,
-                    layer->insData[0].lock()->getTensorDesc().getLayout());
+                                     layer->insData[0].lock()->getTensorDesc().getLayout());
             config.inConfs.push_back(dataIn);
 
             DataConfig dataConfigOut;
             const SizeVector& out_dims = layer->outData[0]->getTensorDesc().getDims();
             dataConfigOut.desc = TensorDesc(layer->outData[0]->getTensorDesc().getPrecision(), out_dims,
-                    layer->outData[0]->getTensorDesc().getLayout());
+                                            layer->outData[0]->getTensorDesc().getLayout());
             config.outConfs.push_back(dataConfigOut);
             config.dynBatchSupport = false;
             confs.push_back(config);
@@ -60,12 +61,66 @@ public:
         try {
             auto compare = getPrecisionMask(inputs[0]->getTensorDesc().getPrecision(), outputs[0]->getTensorDesc().getPrecision());
             switch (compare) {
-                case getPrecisionMask(Precision::BF16, Precision::FP32):
-                    // in this case convert has to be changes by reorder
+                case getPrecisionMask(Precision::BF16, Precision::FP32): {
+                    const uint16_t* src_data = inputs[0]->cbuffer().as<uint16_t*>() +
+                                               inputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    float_t* dst_data = outputs[0]->buffer().as<float_t*>() +
+                                        outputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    if (inputs[0]->size() != outputs[0]->size())
+                        THROW_IE_EXCEPTION << "Input and output buffers have different sizes!";
+                    parallel_for(inputs[0]->size(), [&](size_t i) {
+                        dst_data[i] = ngraph::bfloat16::from_bits(src_data[i]);
+                    });
                     break;
-                case getPrecisionMask(Precision::FP32, Precision::BF16):
-                    // in this case convert has to be changes by reorder
+                }
+                case getPrecisionMask(Precision::FP32, Precision::BF16): {
+                    const float_t* src_data = inputs[0]->cbuffer().as<float_t*>() +
+                                              inputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    uint16_t* dst_data = outputs[0]->buffer().as<uint16_t*>() +
+                                         outputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    if (inputs[0]->size() != outputs[0]->size())
+                        THROW_IE_EXCEPTION << "Input and output buffers have different sizes!";
+                    parallel_for(inputs[0]->size(), [&](size_t i) {
+                        dst_data[i] = ngraph::bfloat16(src_data[i]).to_bits();
+                    });
                     break;
+                }
+                case getPrecisionMask(Precision::I32, Precision::BF16): {
+                    const int32_t* src_data = inputs[0]->cbuffer().as<int32_t*>() +
+                                              inputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    uint16_t* dst_data = outputs[0]->buffer().as<uint16_t*>() +
+                                         outputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    if (inputs[0]->size() != outputs[0]->size())
+                        THROW_IE_EXCEPTION << "Input and output buffers have different sizes!";
+                    parallel_for(inputs[0]->size(), [&](size_t i) {
+                        dst_data[i] = ngraph::bfloat16(static_cast<float_t>(src_data[i])).to_bits();
+                    });
+                    break;
+                }
+                case getPrecisionMask(Precision::BF16, Precision::I32): {
+                    const int16_t* src_data = inputs[0]->cbuffer().as<int16_t*>() +
+                                              inputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    int32_t* dst_data = outputs[0]->buffer().as<int32_t*>() +
+                                        outputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    if (inputs[0]->size() != outputs[0]->size())
+                        THROW_IE_EXCEPTION << "Input and output buffers have different sizes!";
+                    parallel_for(inputs[0]->size(), [&](size_t i) {
+                        dst_data[i] = static_cast<int32_t>(ngraph::bfloat16::from_bits(src_data[i]));
+                    });
+                    break;
+                }
+                case getPrecisionMask(Precision::U8, Precision::BF16): {
+                    const uint8_t* src_data = inputs[0]->cbuffer().as<uint8_t*>() +
+                                              inputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    uint16_t* dst_data = outputs[0]->buffer().as<uint16_t*>() +
+                                         outputs[0]->getTensorDesc().getBlockingDesc().getOffsetPadding();
+                    if (inputs[0]->size() != outputs[0]->size())
+                        THROW_IE_EXCEPTION << "Input and output buffers have different sizes!";
+                    parallel_for(inputs[0]->size(), [&](size_t i) {
+                        dst_data[i] = ngraph::bfloat16(static_cast<float_t>(src_data[i])).to_bits();
+                    });
+                    break;
+                }
                 case getPrecisionMask(Precision::U8, Precision::FP32):
                     exec_cast<PrecisionTrait<Precision::U8>::value_type, PrecisionTrait<Precision::FP32>::value_type>(inputs[0], outputs[0]);
                     break;

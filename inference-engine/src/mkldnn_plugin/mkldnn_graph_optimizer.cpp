@@ -2191,6 +2191,11 @@ void MKLDNNGraphOptimizer::ChangeConvertToReorder(MKLDNNGraph& graph) {
         if (nodeType != "convert") {
             continue;
         }
+        auto dstType = convertCandidate->getChildEdgeAt(0)->getChild()->getType();
+        if (dstType == Convolution || dstType == Reorder) {
+            // TODO: have to be removed after adding suitable implementation for convolution
+            continue;
+        }
         auto inputPrecision = convertCandidate->getCnnLayer()->insData[0].lock()->getPrecision();
         auto outputPrecision = convertCandidate->getCnnLayer()->outData[0]->getPrecision();
         if (std::find(continuousPrecisions.begin(), continuousPrecisions.end(), inputPrecision) == continuousPrecisions.end() ||
