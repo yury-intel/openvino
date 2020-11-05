@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <single_layer_tests/interpolate.hpp>
 #include "test_utils/cpu_test_utils.hpp"
+#include "functional_test_utils/layer_test_utils.hpp"
+
+#include "ngraph_functions/builders.hpp"
+#include "ngraph_functions/utils/ngraph_helpers.hpp"
 
 using namespace InferenceEngine;
 using namespace CPUTestUtils;
@@ -11,20 +14,46 @@ using namespace CPUTestUtils;
 namespace CPULayerTestsDefinitions {
 
 typedef std::tuple<
-        LayerTestsDefinitions::InterpolateLayerTestParams,
+        size_t,  // channels count of output
+        size_t,  // offset for iteration across output pulled bins
+        float,  // scale for given region considering actual input size
+        int,  // bin's column count
+        int,  // bin's row count
+        std::vector<float>,  // coordinate vector: batch id, left_top_x, left_top_y, right_bottom_x, right_bottom_y
+        std::string,  // mode for non-deformable psroi
+        std::vector<size_t>  // feature map shape
+> PsroipoolingSpecificParams;
+
+typedef std::tuple<
+        PsroipoolingSpecificParams,
+        InferenceEngine::Precision,     // Net precision
+        InferenceEngine::Precision,     // Input precision
+        InferenceEngine::Precision,     // Output precision
+        InferenceEngine::Layout,        // Input layout
+        InferenceEngine::Layout,        // Output layout
+        InferenceEngine::SizeVector,    // Input shapes
+        InferenceEngine::SizeVector,    // Target shapes
+        LayerTestsUtils::TargetDevice   // Device name
+> PsroipoolingLayerTestParams;
+
+typedef std::tuple<
+        CPULayerTestsDefinitions::PsroipoolingLayerTestParams,
         CPUSpecificParams> PsroipoolingLayerCPUTestParamsSet;
 
 class PsroipoolingLayerCPUTest : public testing::WithParamInterface<PsroipoolingLayerCPUTestParamsSet>,
                                 virtual public LayerTestsUtils::LayerTestsCommon, public CPUTestsBase {
 public:
     static std::string getTestCaseName(testing::TestParamInfo<PsroipoolingLayerCPUTestParamsSet> obj) {
-        LayerTestsDefinitions::InterpolateLayerTestParams basicParamsSet;
+        CPULayerTestsDefinitions::PsroipoolingLayerTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
         std::tie(basicParamsSet, cpuParams) = obj.param;
 
         std::ostringstream result;
-        result << LayerTestsDefinitions::InterpolateLayerTest::getTestCaseName(testing::TestParamInfo<LayerTestsDefinitions::InterpolateLayerTestParams>(
-                basicParamsSet, 0));
+
+//        result << CPULayerTestsDefinitions::PsroipoolingLayerCPUTest::getTestCaseName(
+//        testing::TestParamInfo<CPULayerTestsDefinitions::PsroipoolingLayerTestParams>(
+//                basicParamsSet, 0));
+        result << std::to_string(obj.index);
 
         result << CPUTestsBase::getTestCaseName(cpuParams);
 
@@ -40,17 +69,17 @@ public:
     }
 protected:
     void SetUp() override {
-        LayerTestsDefinitions::InterpolateLayerTestParams basicParamsSet;
+        CPULayerTestsDefinitions::PsroipoolingLayerTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
         std::tie(basicParamsSet, cpuParams) = this->GetParam();
 
         std::tie(inFmts, outFmts, priority, selectedType) = cpuParams;
 
-        LayerTestsDefinitions::InterpolateSpecificParams psroiParams;
-        std::vector<size_t> inputShape;
+        CPULayerTestsDefinitions::PsroipoolingSpecificParams psroiParams;
+        std::vector<size_t> inputShape_unused;
         std::vector<size_t> targetShape;
         auto netPrecision = InferenceEngine::Precision::UNSPECIFIED;
-        std::tie(psroiParams, netPrecision, inPrc, outPrc, inLayout, outLayout, inputShape, targetShape, targetDevice) = basicParamsSet;
+        std::tie(psroiParams, netPrecision, inPrc, outPrc, inLayout, outLayout, inputShape_unused, targetShape, targetDevice) = basicParamsSet;
 
         int spatialBinX;
         int spatialBinY;
@@ -58,20 +87,21 @@ protected:
         size_t groupSize;
         size_t outputDim;
         std::vector<float> proposalsVector;
-        std::string noDeformableMode;
+        std::string nonDeformableMode;
         std::vector<size_t> inputShape;
 
         std:tie(outputDim, groupSize, spatialScale, spatialBinX, spatialBinY,
-                proposalsVector, mode, inputShape) = psroiParams;
+                proposalsVector, nonDeformableMode, inputShape) = psroiParams;
         std::shared_ptr<ngraph::opset1::Constant> coords = nullptr;
         ngraph::Shape coordsShape = { proposalsVector.size(), 5 };
+        ngraph::element::Type ntype = inPrc == InferenceEngine::Precision::FP32 ? ngraph::element::f32 : ngraph::element::bf16;
         coords = std::make_shared<ngraph::opset1::Constant>(ntype, coordsShape, proposalsVector.data());
 
         auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
         auto params = ngraph::builder::makeParams(ngPrc, {inputShape});
 
-        auto psroi = std::make_shared<ngraph::opset1::PSROIPooling>(params[0], coords, output_dim, group_size,
-                                                                          spatial_scale, spatial_bins_x, spatial_bins_y, mode);
+        auto psroi = std::make_shared<ngraph::opset1::PSROIPooling>(params[0], coords, outputDim, groupSize,
+                                                                          spatialScale, spatialBinX, spatialBinY, nonDeformableMode);
         psroi->get_rt_info() = getCPUInfo();
         const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(psroi)};
         function = std::make_shared<ngraph::Function>(results, params, "psroipooling");
@@ -79,10 +109,11 @@ protected:
 private:
     void PsroiValidate() {
 //        auto expectedOutputs = CalculateRefs();
-//        const auto& actualOutputs = GetOutputs();
+        const auto& actualOutputs = GetOutputs();
+        auto expectedOutputs = GetOutputs();
 
-        std::vector<std::vector<uint8_t>> expectedOutputs {{ 1 }};
-        std::vector<std::vector<uint8_t>> actualOutputs {{ 1 }};
+//        std::vector<std::vector<uint8_t>> expectedOutputs;
+//        std::vector<std::vector<uint8_t>> actualOutputs;
 
         if (expectedOutputs.empty()) {
             return;
@@ -91,7 +122,11 @@ private:
         IE_ASSERT(actualOutputs.size() == expectedOutputs.size())
             << "nGraph interpreter has " << expectedOutputs.size() << " outputs, while IE " << actualOutputs.size();
 
-        Compare(expectedOutputs, actualOutputs);
+        for (std::size_t outputIndex = 0; outputIndex < expectedOutputs.size(); ++outputIndex) {
+            const auto& expected = expectedOutputs[outputIndex];
+            const auto& actual = actualOutputs[outputIndex];
+            Compare(expected, actual);
+        }
 }
 };
 
@@ -99,7 +134,7 @@ TEST_P(PsroipoolingLayerCPUTest, CompareWithRefs) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
 
     Run();
-    CheckCPUImpl(executableNetwork, "Interpolate");
+    CheckCPUImpl(executableNetwork, "Psroipooling");
 }
 
 namespace {
@@ -132,13 +167,11 @@ const std::vector<int> spatialBinXVector = { 3 };
 
 const std::vector<int> spatialBinYVector = { 3 };
 
-const std::vector<float> spatialScaleXVector = { 1.0f };
+const std::vector<float> spatialScaleVector = { 1.0f };
 
 const std::vector<size_t> groupSizeVector = { 2 };
 
 const std::vector<size_t> outputDimVector = { 1 };
-
-const std::vector<size_t> regionsCountVector = { 1 };
 
 const std::vector<std::string> noDeformableModeVector = {
         "bilinear",
@@ -156,27 +189,32 @@ const std::vector<std::vector<float>> proposalsVector = {
 const auto psroipoolingNonDeformableParams = ::testing::Combine(
         ::testing::ValuesIn(outputDimVector),  // channels count of output
         ::testing::ValuesIn(groupSizeVector),  // offset for iteration across output pulled bins
-        ::testing::ValuesIn(spatialScaleXVector),  // scale for given region considering actual input size
+        ::testing::ValuesIn(spatialScaleVector),  // scale for given region considering actual input size
         ::testing::ValuesIn(spatialBinXVector),  // bin's column count
         ::testing::ValuesIn(spatialBinYVector),  // bin's row count
         ::testing::ValuesIn(proposalsVector),  // coordinate vector: batch id, left_top_x, left_top_y, right_bottom_x, right_bottom_y
         ::testing::ValuesIn(noDeformableModeVector),  // mode for non-deformable psroi
-        ::testing::ValuesIn(inputShapeVector),  // feature map shape
+        ::testing::ValuesIn(inputShapeVector)  // feature map shape
 );
 
-INSTANTIATE_TEST_CASE_P(smoke_PsroiPooling_Non_Deformable_Layout_Test, PsroipoolingLayerCPUTest,
-                        ::testing::Combine(  // test params
-                                ::testing::Combine(  // basic params
-                                        psroipoolingNonDeformableParams,  // psroi params
-                                        ::testing::ValuesIn(netPrecisions),
-                                        ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
-                                        ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
-                                        ::testing::Values(InferenceEngine::Layout::ANY),
-                                        ::testing::Values(InferenceEngine::Layout::ANY),
-                                        ::testing::Values(std::vector<size_t>({1, 1, 40, 40})),
-                                        ::testing::Values(std::vector<size_t>({1, 1, 50, 60})),
-                                        ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-                                ::testing::ValuesIn(filterCPUInfoForDevice())),  // cpu params
-                        PsroipoolingLayerCPUTest::getTestCaseName);
+const auto bigCombine = ::testing::Combine(  // test params
+        ::testing::Combine(  // basic params
+                psroipoolingNonDeformableParams,  // psroi params
+                ::testing::ValuesIn(netPrecisions),
+                ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
+                ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
+                ::testing::Values(InferenceEngine::Layout::ANY),
+                ::testing::Values(InferenceEngine::Layout::ANY),
+                ::testing::Values(std::vector<size_t>({1, 1, 40, 40})),
+                ::testing::Values(std::vector<size_t>({1, 1, 50, 60})),
+                ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+        ::testing::ValuesIn(filterCPUInfoForDevice()));
+//const auto bigCombine = ::testing::ValuesIn(filterCPUInfoForDevice());
+
+INSTANTIATE_TEST_CASE_P(smoke_PsroiPoolingNonDeformableLayoutTest, PsroipoolingLayerCPUTest,
+                        bigCombine
+                        ,  // cpu params
+                        PsroipoolingLayerCPUTest::getTestCaseName
+);
 } // namespace
 } // namespace CPULayerTestsDefinitions
