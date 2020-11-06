@@ -1,3 +1,4 @@
+
 // Copyright (C) 2018-2020 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -7,7 +8,10 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <mkldnn_types.h>
 #include "ie_parallel.hpp"
+#include "c_types_map.hpp"
+#include "bfloat16_utils.hpp"
 
 namespace InferenceEngine {
 namespace Extensions {
@@ -46,23 +50,46 @@ public:
             part_size_ = layer->GetParamAsInt("part_size", 1);
             trans_std_ = layer->GetParamAsFloat("trans_std", 1);
 
+            bool isBf16Input = layer->insData[0].lock()->getTensorDesc().getPrecision() == Precision::BF16;
             if (no_trans_) {
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN, Precision::FP32)},
-                    {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32), DataConfigurator(ConfLayout::PLN)},
+                          {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32)});
             } else {
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN, Precision::FP32),
-                                  DataConfigurator(ConfLayout::PLN, Precision::FP32)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32), DataConfigurator(ConfLayout::PLN),
+                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32)});
             }
         } catch (InferenceEngine::details::InferenceEngineException &ex) {
             errorMsg = ex.what();
         }
     }
 
-    StatusCode execute(std::vector<Blob::Ptr>& inputs, std::vector<Blob::Ptr>& outputs,
-                       ResponseDesc *resp) noexcept override {
-        float* dst_data = outputs[0]->buffer();
-        const float *bottom_data_beginning = inputs[0]->buffer();
+    struct Bf16ToFp32 {
+        inline float operator()(mkldnn_bfloat16_t value) {
+            auto res = mkldnn::impl::cpu::bf16_cvt_utils::cvt_bfloat16_to_float(value);
+            return res;
+        }
+    };
+    struct Fp32ToBf16 {
+        inline mkldnn_bfloat16_t operator()(float value) {
+            auto res = mkldnn::impl::cpu::bf16_cvt_utils::cvt_float_to_bfloat16(value);
+            return res;
+        }
+    };
+    struct Fp32Eq {
+        inline float operator()(float value) {
+            return value;
+        }
+    };
+
+    template <typename inputType, typename outputType, class InputToAccConversion, class AccToOutputConversion>
+    StatusCode executeSpecified(std::vector<Blob::Ptr>& inputs, std::vector<Blob::Ptr>& outputs,
+                                ResponseDesc *resp) {
+        float* dst_data_fp32 = outputs[0]->buffer();
+        const float *bottom_data_fp32 = inputs[0]->buffer();
         const float *bottom_rois_beginning = inputs[1]->buffer();
+
+        auto src_data = reinterpret_cast<const inputType *>(bottom_data_fp32);
+        auto dst_data = reinterpret_cast<outputType *>(dst_data_fp32);
 
         int real_rois = 0;
         for (; real_rois < nn; real_rois++) {
@@ -86,7 +113,7 @@ public:
         size_t num_bins = spatial_bins_x_*spatial_bins_y_;
 
         parallel_for(real_rois, [&](int n) {
-            const float* bottom_rois = bottom_rois_beginning + n * 5;
+            const float *bottom_rois = bottom_rois_beginning + n * 5;
             int roi_batch_ind = static_cast<int>(bottom_rois[0]);
             float roi_start_w = 0.0f;
             float roi_start_h = 0.0f;
@@ -124,7 +151,7 @@ public:
                 for (int h = 0; h < nh; h++) {
                     for (int w = 0; w < nw; w++) {
                         size_t index = n*nc*nh*nw + c*nh*nw + h*nw + w;
-                        dst_data[index] = 0.0f;
+                        dst_data[index] = AccToOutputConversion()(0.0f);
 
                         if (mode_ == "average") {
                             float bin_size_h = roi_height / static_cast<float>(pooled_height_);
@@ -144,17 +171,17 @@ public:
                             float bin_area = static_cast<float>((hend - hstart) * (wend - wstart));
                             if (bin_area) {
                                 int gc = (c * group_size_ + h) * group_size_ + w;
-                                const float *bottom_data =
-                                        bottom_data_beginning + ((roi_batch_ind * channels + gc) * height * width);
-
+                                const auto *bottom_data =
+                                        src_data + ((roi_batch_ind * channels + gc) * height * width);
                                 float out_sum = 0.0f;
                                 for (int hh = hstart; hh < hend; ++hh)
-                                    for (int ww = wstart; ww < wend; ++ww)
-                                        out_sum += bottom_data[hh * width + ww];
-
-                                dst_data[index] = out_sum / bin_area;
+                                    for (int ww = wstart; ww < wend; ++ww) {
+                                        out_sum += InputToAccConversion()(bottom_data[hh * width + ww]);
+                                    }
+                                dst_data[index] = AccToOutputConversion()(out_sum / bin_area);
                             }
                         } else if (mode_ == "bilinear") {
+                            float accum = 0.0f;
                             for (size_t bin_y = 0; bin_y < spatial_bins_y_; bin_y++) {
                                 for (size_t bin_x = 0; bin_x < spatial_bins_x_; bin_x++) {
                                     float box_xmin = roi_start_w + (bin_x + 0) * (roi_width / spatial_bins_x_);
@@ -164,7 +191,7 @@ public:
 
                                     size_t gc = c + (bin_y*spatial_bins_x_ + bin_x)*nc;
                                     size_t src_idx = (roi_batch_ind * channels + gc) * height * width;
-                                    const float *bottom_data = bottom_data_beginning + src_idx;
+                                    const auto *bottom_data = src_data + src_idx;
 
                                     float height_scale = nh > 1 ? (box_ymax - box_ymin) * (height - 1) / (pooled_height_ - 1)
                                                                 : 0.0f;
@@ -188,19 +215,20 @@ public:
                                         if (bottom_y_index > height - 1)
                                             bottom_y_index = height - 1;
 
-                                        const float top_left = bottom_data[top_y_index * width + left_x_index];
-                                        const float top_right = bottom_data[top_y_index * width + right_x_index];
-                                        const float bottom_left = bottom_data[bottom_y_index * width + left_x_index];
-                                        const float bottom_right = bottom_data[bottom_y_index * width + right_x_index];
+                                        const float top_left = InputToAccConversion()(bottom_data[top_y_index * width + left_x_index]);
+                                        const float top_right = InputToAccConversion()(bottom_data[top_y_index * width + right_x_index]);
+                                        const float bottom_left = InputToAccConversion()(bottom_data[bottom_y_index * width + left_x_index]);
+                                        const float bottom_right = InputToAccConversion()(bottom_data[bottom_y_index * width + right_x_index]);
 
                                         const float top = top_left + (top_right - top_left) * (in_x - left_x_index);
                                         const float bottom = bottom_left + (bottom_right - bottom_left) * (in_x - left_x_index);
 
-                                        dst_data[index] += top + (bottom - top) * (in_y - top_y_index);
+                                        accum += top + (bottom - top) * (in_y - top_y_index);
                                     }
                                 }
                             }
-                            dst_data[index] /= num_bins;
+                            accum /= num_bins;
+                            dst_data[index] = AccToOutputConversion()(accum);
                         } else if (mode_ == "bilinear_deformable") {
                             // Compute w and h at bottom
                             float bin_size_h = roi_height / static_cast<float>(pooled_height_);
@@ -213,8 +241,8 @@ public:
                             int part_w = w * part_size_ / pooled_width_;
                             int class_id = c / channels_each_class;
                             float trans_x = no_trans_ ? 0 :
-                                    bottom_trans[(((n * num_classes + class_id) * 2) * part_size_ + part_h)
-                                                                                      * part_size_ + part_w] * trans_std_;
+                                            bottom_trans[(((n * num_classes + class_id) * 2) * part_size_ + part_h)
+                                                         * part_size_ + part_w] * trans_std_;
                             float trans_y = no_trans_ ? 0 :
                                             bottom_trans[(((n * num_classes + class_id) * 2 + 1) * part_size_ + part_h)
                                                          * part_size_ + part_w] * trans_std_;
@@ -229,7 +257,7 @@ public:
                             gw = (std::min)((std::max)(gw, 0), static_cast<int>(group_size_ - 1));
                             gh = (std::min)((std::max)(gh, 0), static_cast<int>(group_size_ - 1));
 
-                            const float* offset_bottom_data = bottom_data_beginning + (roi_batch_ind * channels) * height * width;
+                            const inputType* offset_bottom_data = src_data + (roi_batch_ind * channels) * height * width;
                             for (size_t ih = 0; ih < spatial_bins_y_; ih++) {
                                 for (size_t iw = 0; iw < spatial_bins_x_; iw++) {
                                     float w1 = wstart + iw * sub_bin_size_w;
@@ -240,12 +268,13 @@ public:
                                     w1 = static_cast<float>((std::min)((std::max)(static_cast<double>(w1), 0.0), width - 1.0));
                                     h1 = static_cast<float>((std::min)((std::max)(static_cast<double>(h1), 0.0), height - 1.0));
                                     int c1 = static_cast<int>((c * group_size_ + gh) * group_size_ + gw);
-                                    float val = bilinear_interp(offset_bottom_data + c1 * height * width, w1, h1, width);
+                                    float val = bilinear_interp<inputType, InputToAccConversion>(offset_bottom_data +
+                                                                                                 c1 * height * width, w1, h1, width);
                                     sum += val;
                                     count++;
                                 }
                             }
-                            dst_data[index] = count == 0 ? 0 : sum / count;
+                            dst_data[index] = AccToOutputConversion()(count == 0 ? 0.0f : sum / count);
                         }
                     }
                 }
@@ -255,24 +284,49 @@ public:
         for (int n = real_rois; n < nn; n++) {
             parallel_for3d(nc, nh, nw, [&](int c, int h, int w) {
                 int index = n * nc * nh * nw + c * nh * nw + h * nw + w;
-                dst_data[index] = 0.0f;
+                dst_data[index] = AccToOutputConversion()(0.0f);
             });
         }
 
         return OK;
     }
 
-    inline float bilinear_interp(const float* data, const float x, const float y, const int width) {
+    StatusCode execute(std::vector<Blob::Ptr>& inputs, std::vector<Blob::Ptr>& outputs,
+                       ResponseDesc *resp) noexcept override {
+        float* dst_data = outputs[0]->buffer();
+        const float *bottom_data_fp32 = inputs[0]->buffer();
+        const float *bottom_rois_beginning = inputs[1]->buffer();
+
+        auto inputPrec = inputs[0]->getTensorDesc().getPrecision();
+        auto outputPrec = outputs[0]->getTensorDesc().getPrecision();
+        if (inputPrec == Precision::BF16) {
+            if (outputPrec == Precision::BF16) {
+                return executeSpecified<mkldnn_bfloat16_t, mkldnn_bfloat16_t, Bf16ToFp32, Fp32ToBf16>(inputs, outputs, resp);
+            } else {
+                return executeSpecified<mkldnn_bfloat16_t, float, Bf16ToFp32, Fp32Eq>(inputs, outputs, resp);
+            }
+        } else {
+            if (outputPrec == Precision::BF16) {
+                return executeSpecified<float, mkldnn_bfloat16_t, Fp32Eq, Fp32ToBf16>(inputs, outputs, resp);
+            } else {
+                return executeSpecified<float, float, Fp32Eq, Fp32Eq>(inputs, outputs, resp);
+            }
+        }
+    }
+
+    template <typename inputType, class InputToAccConversion>
+    inline float bilinear_interp(const inputType* data, const float x, const float y, const int width) {
         int x1 = static_cast<int>(std::floor(x));
         int x2 = static_cast<int>(std::ceil(x));
         int y1 = static_cast<int>(std::floor(y));
         int y2 = static_cast<int>(std::ceil(y));
         float dist_x = x - x1;
         float dist_y = y - y1;
-        float value11 = data[y1 * width + x1];
-        float value12 = data[y2 * width + x1];
-        float value21 = data[y1 * width + x2];
-        float value22 = data[y2 * width + x2];
+
+        float value11 = InputToAccConversion()(data[y1 * width + x1]);
+        float value12 = InputToAccConversion()(data[y2 * width + x1]);
+        float value21 = InputToAccConversion()(data[y1 * width + x2]);
+        float value22 = InputToAccConversion()(data[y2 * width + x2]);
         float value = (1 - dist_x) * (1 - dist_y) * value11 + (1 - dist_x) * dist_y * value12
                       + dist_x * (1 - dist_y) * value21 + dist_x * dist_y * value22;
         return value;
