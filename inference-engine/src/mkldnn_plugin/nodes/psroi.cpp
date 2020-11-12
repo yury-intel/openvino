@@ -52,12 +52,27 @@ public:
             trans_std_ = layer->GetParamAsFloat("trans_std", 1);
 
             bool isBf16Input = layer->insData[0].lock()->getTensorDesc().getPrecision() == Precision::BF16;
+
             if (no_trans_) {
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32), DataConfigurator(ConfLayout::PLN)},
-                          {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
+                          {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN)},
+                          {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
+
+                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::FP32), DataConfigurator(ConfLayout::PLN)},
+                          {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::BF16), DataConfigurator(ConfLayout::PLN)},
+                          {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
             } else {
-                addConfig(layer, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32), DataConfigurator(ConfLayout::PLN),
-                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, isBf16Input ? Precision::BF16 : Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::FP32), DataConfigurator(ConfLayout::PLN),
+                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::PLN, Precision::BF16), DataConfigurator(ConfLayout::PLN),
+                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
+
+                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::FP32), DataConfigurator(ConfLayout::PLN),
+                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
+                addConfig(layer, {DataConfigurator(ConfLayout::BLK16, Precision::BF16), DataConfigurator(ConfLayout::PLN),
+                                  DataConfigurator(ConfLayout::PLN)}, {DataConfigurator(ConfLayout::PLN, Precision::BF16)});
             }
         } catch (InferenceEngine::details::InferenceEngineException &ex) {
             errorMsg = ex.what();
@@ -73,6 +88,7 @@ public:
 
         int block_size = inputs[0]->getTensorDesc().getLayout() == Layout::BLOCKED ?
                          inputs[0]->getTensorDesc().getBlockingDesc().getBlockDims()[4] : 1;
+        int blockOffset = width * block_size;
 
         int real_rois = 0;
         for (; real_rois < nn; real_rois++) {
@@ -129,14 +145,12 @@ public:
                 roi_width  = std::max<float>(roi_end_w - roi_start_w, 0.1f);  // avoid 0
                 roi_height = std::max<float>(roi_end_h - roi_start_h, 0.1f);
             }
-
-            for (int c = 0; c < nc; c++) {
-                for (int h = 0; h < nh; h++) {
-                    for (int w = 0; w < nw; w++) {
-                        size_t index = n*nc*nh*nw + c*nh*nw + h*nw + w;
-                        dst_data[index] = 0.0f;
-
-                        if (mode_ == "average") {
+            if (mode_ == "average") {
+                for (int c = 0; c < nc; c++) {
+                    for (int h = 0; h < nh; h++) {
+                        for (int w = 0; w < nw; w++) {
+                            size_t index = n*nc*nh*nw + c*nh*nw + h*nw + w;
+                            dst_data[index] = 0.0f;
                             float bin_size_h = roi_height / static_cast<float>(pooled_height_);
                             float bin_size_w = roi_width  / static_cast<float>(pooled_width_);
 
@@ -154,20 +168,29 @@ public:
                             float bin_area = static_cast<float>((hend - hstart) * (wend - wstart));
                             if (bin_area) {
                                 int gc = (c * group_size_ + h) * group_size_ + w;
-//                                const auto *bottom_data =
-//                                        src_data + ((roi_batch_ind * channels + gc) * height * width);
+                                int blockOffset = (gc / block_size) * block_size;
+                                int blockResidual = gc % block_size;
                                 const auto *bottom_data =
-                                        src_data + ((roi_batch_ind * channels + (gc / block_size) * block_size) * height * width);
+                                        src_data + ((roi_batch_ind * channels + blockOffset) * height * width);
                                 float out_sum = 0.0f;
-                                for (int hh = hstart; hh < hend; ++hh)
-                                    for (int ww = wstart; ww < wend; ++ww) {
-//                                        out_sum += bottom_data[hh * width + ww];
-                                        int out_ind = (hh * width + ww) * block_size + gc % block_size;
-                                        out_sum += bottom_data[out_ind];
+                                int heightIndexBound = hend * blockOffset;
+                                int weightIndexBound = wend * blockOffset;
+                                for (int hh = hstart * blockOffset; hh < heightIndexBound; hh += blockOffset) {
+                                    for (int ww = wstart * block_size; ww < weightIndexBound; ww += block_size) {
+                                        out_sum += bottom_data[hh + ww + blockResidual];
                                     }
+                                }
                                 dst_data[index] = out_sum / bin_area;
                             }
-                        } else if (mode_ == "bilinear") {
+                        }
+                    }
+                }
+            } else if (mode_ == "bilinear") {
+                for (int c = 0; c < nc; c++) {
+                    for (int h = 0; h < nh; h++) {
+                        for (int w = 0; w < nw; w++) {
+                            size_t index = n*nc*nh*nw + c*nh*nw + h*nw + w;
+                            dst_data[index] = 0.0f;
                             float accum = 0.0f;
                             for (size_t bin_y = 0; bin_y < spatial_bins_y_; bin_y++) {
                                 for (size_t bin_x = 0; bin_x < spatial_bins_x_; bin_x++) {
@@ -216,7 +239,15 @@ public:
                             }
                             accum /= num_bins;
                             dst_data[index] = accum;
-                        } else if (mode_ == "bilinear_deformable") {
+                        }
+                    }
+                }
+            } else if (mode_ == "bilinear_deformable") {
+                for (int c = 0; c < nc; c++) {
+                    for (int h = 0; h < nh; h++) {
+                        for (int w = 0; w < nw; w++) {
+                            size_t index = n*nc*nh*nw + c*nh*nw + h*nw + w;
+                            dst_data[index] = 0.0f;
                             // Compute w and h at bottom
                             float bin_size_h = roi_height / static_cast<float>(pooled_height_);
                             float bin_size_w = roi_width  / static_cast<float>(pooled_width_);
