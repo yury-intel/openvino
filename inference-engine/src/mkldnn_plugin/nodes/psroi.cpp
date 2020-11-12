@@ -88,7 +88,6 @@ public:
 
         int block_size = inputs[0]->getTensorDesc().getLayout() == Layout::BLOCKED ?
                          inputs[0]->getTensorDesc().getBlockingDesc().getBlockDims()[4] : 1;
-        int blockOffset = width * block_size;
 
         int real_rois = 0;
         for (; real_rois < nn; real_rois++) {
@@ -170,16 +169,17 @@ public:
                                 int gc = (c * group_size_ + h) * group_size_ + w;
                                 int blockOffset = (gc / block_size) * block_size;
                                 int blockResidual = gc % block_size;
+//                                const auto *bottom_data =
+//                                        src_data + ((roi_batch_ind * channels + gc) * height * width);
                                 const auto *bottom_data =
                                         src_data + ((roi_batch_ind * channels + blockOffset) * height * width);
                                 float out_sum = 0.0f;
-                                int heightIndexBound = hend * blockOffset;
-                                int weightIndexBound = wend * blockOffset;
-                                for (int hh = hstart * blockOffset; hh < heightIndexBound; hh += blockOffset) {
-                                    for (int ww = wstart * block_size; ww < weightIndexBound; ww += block_size) {
-                                        out_sum += bottom_data[hh + ww + blockResidual];
+                                for (int hh = hstart; hh < hend; ++hh)
+                                    for (int ww = wstart; ww < wend; ++ww) {
+//                                        out_sum += bottom_data[hh * width + ww];
+                                        int out_ind = (hh * width + ww) * block_size + blockResidual;
+                                        out_sum += bottom_data[out_ind];
                                     }
-                                }
                                 dst_data[index] = out_sum / bin_area;
                             }
                         }
