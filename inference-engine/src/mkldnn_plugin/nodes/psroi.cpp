@@ -71,6 +71,9 @@ public:
         const auto *src_data = inputs[0]->cbuffer().as<const inputType*>();
         auto *dst_data = outputs[0]->buffer().as<outputType*>();
 
+        int block_size = inputs[0]->getTensorDesc().getLayout() == Layout::BLOCKED ?
+                         inputs[0]->getTensorDesc().getBlockingDesc().getBlockDims()[4] : 1;
+
         int real_rois = 0;
         for (; real_rois < nn; real_rois++) {
             const float *bottom_rois = bottom_rois_beginning + real_rois * 5;
@@ -151,12 +154,16 @@ public:
                             float bin_area = static_cast<float>((hend - hstart) * (wend - wstart));
                             if (bin_area) {
                                 int gc = (c * group_size_ + h) * group_size_ + w;
+//                                const auto *bottom_data =
+//                                        src_data + ((roi_batch_ind * channels + gc) * height * width);
                                 const auto *bottom_data =
-                                        src_data + ((roi_batch_ind * channels + gc) * height * width);
+                                        src_data + ((roi_batch_ind * channels + (gc / block_size) * block_size) * height * width);
                                 float out_sum = 0.0f;
                                 for (int hh = hstart; hh < hend; ++hh)
                                     for (int ww = wstart; ww < wend; ++ww) {
-                                        out_sum += bottom_data[hh * width + ww];
+//                                        out_sum += bottom_data[hh * width + ww];
+                                        int out_ind = (hh * width + ww) * block_size + gc % block_size;
+                                        out_sum += bottom_data[out_ind];
                                     }
                                 dst_data[index] = out_sum / bin_area;
                             }
