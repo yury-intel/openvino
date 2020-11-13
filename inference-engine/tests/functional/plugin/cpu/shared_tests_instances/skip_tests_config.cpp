@@ -49,13 +49,10 @@ std::vector<std::string> disabledTestPatterns() {
         R"(.*ActivationParamLayerTest.*)",
         // TODO: Issue: 37862
         R"(.*ReverseSequenceLayerTest.*netPRC=(I8|U8).*)",
-        // TODO: Issue: 39726
-        R"(.*EltwiseLayerTest.*eltwiseOpType=Mod.*netPRC=BF16.*)",
-        // TODO: Issue: 38841
+        // TODO: Issue: 38841l
         R"(.*TopKLayerTest.*k=10.*mode=min.*sort=index.*)",
         R"(.*TopKLayerTest.*k=5.*sort=(none|index).*)",
     };
-
 
     if (!InferenceEngine::with_cpu_x86_bfloat16()) {
         // on platforms which do not support bfloat16, we are disabling bf16 tests since there are no bf16 primitives,
