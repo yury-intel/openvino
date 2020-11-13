@@ -49,9 +49,7 @@ std::vector<std::string> disabledTestPatterns() {
         R"(.*ActivationParamLayerTest.*)",
         // TODO: Issue: 37862
         R"(.*ReverseSequenceLayerTest.*netPRC=(I8|U8).*)",
-        // TODO: Issue: 39726
-        R"(.*EltwiseLayerTest.*eltwiseOpType=Mod.*netPRC=BF16.*)",
-        // TODO: Issue: 38841
+        // TODO: Issue: 38841l
         R"(.*TopKLayerTest.*k=10.*mode=min.*sort=index.*)",
         R"(.*TopKLayerTest.*k=5.*sort=(none|index).*)",
         // TODO: Issue: 43314
@@ -59,7 +57,6 @@ std::vector<std::string> disabledTestPatterns() {
         // TODO: Issue 43417 sporadic issue, looks like an issue in test, reproducible only on Windows platform
         R"(.*decomposition1_batch=5_hidden_size=10_input_size=30_.*tanh.relu.*_clip=0_linear_before_reset=1.*_targetDevice=CPU_.*)",
     };
-
 
     if (!InferenceEngine::with_cpu_x86_bfloat16()) {
         // on platforms which do not support bfloat16, we are disabling bf16 tests since there are no bf16 primitives,
