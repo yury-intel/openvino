@@ -264,7 +264,7 @@ public:
         for (int n = real_rois; n < nn; n++) {
             parallel_for3d(nc, nh, nw, [&](int c, int h, int w) {
                 int index = n * nc * nh * nw + c * nh * nw + h * nw + w;
-                dst_data[index] = 0.0f;
+                dst_data[index] = 0;
             });
         }
 

@@ -108,19 +108,14 @@ protected:
         } else if (Precision::FP32 == netPrecision) {
             selectedType = "unknown_FP32";
         }
+        threshold = 1.0f;
         const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(psroi)};
         function = std::make_shared<ngraph::Function>(results, params, "PSROIPooling");
     }
 private:
     void PsroiValidate() {
-//        auto expectedOutputs = CalculateRefs();
+        auto expectedOutputs = CalculateRefs();
         const auto& actualOutputs = GetOutputs();
-        auto expectedOutputs = GetOutputs();
-
-
-//        std::vector<std::vector<uint8_t>> expectedOutputs;
-//        std::vector<std::vector<uint8_t>> actualOutputs;
-
         if (expectedOutputs.empty()) {
             return;
         }
@@ -134,25 +129,6 @@ private:
             Compare(expected, actual);
         }
     }
-//    void calculatePsroiRefs(std::vector<InferenceEngine::Blob::Ptr> &outputs) {
-//        SizeVector outDims = outputDim;
-//        nn = static_cast<int>(outDims[0]);
-//        nc = static_cast<int>(outDims[1]);
-//        nh = static_cast<int>(outDims[2]);
-//        nw = static_cast<int>(outDims[3]);
-//        float* dst_data = outputs[0]->buffer();
-//        const float *bottom_data_beginning = inputs[0]->buffer();
-//        const float *bottom_rois_beginning = inputs[1]->buffer();
-//
-//        int real_rois = 0;
-//        for (; real_rois < nn; real_rois++) {
-//            const float *bottom_rois = bottom_rois_beginning + real_rois * 5;
-//            int roi_batch_ind = static_cast<int>(bottom_rois[0]);
-//            if (roi_batch_ind == -1) {
-//                break;
-//            }
-//        }
-//    }
 };
 
 TEST_P(PsroipoolingLayerCPUTest, CompareWithRefs) {
@@ -204,11 +180,11 @@ const std::vector<std::string> noDeformableModeVector = {
 };
 
 const std::vector<std::vector<size_t>> inputShapeVector = {
-        SizeVector({ 1, 3240, 40, 40 })
+        SizeVector({ 1, 3240, 10, 10 })
 };
 
 const std::vector<std::vector<float>> proposalsVector = {
-        { 0, 4, 4, 7, 7 }
+        { 0, 4, 4, 5.9, 5.9 }
 };
 
 const auto psroipoolingNonDeformableParams = ::testing::Combine(

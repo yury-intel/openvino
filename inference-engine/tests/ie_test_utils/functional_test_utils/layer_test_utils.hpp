@@ -87,8 +87,12 @@ protected:
 
     template<class T>
     static void Compare(const T *expected, const T *actual, std::size_t size, T threshold) {
+        auto maxVal = expected[0];
+        int outlN = 0;
         for (std::size_t i = 0; i < size; ++i) {
             const auto &ref = expected[i];
+            if (ref > maxVal)
+                maxVal = ref;
             const auto &res = actual[i];
             const auto absoluteDifference = ie_abs(res - ref);
             if (absoluteDifference <= threshold) {
@@ -96,6 +100,14 @@ protected:
             }
 
             const auto max = std::max(ie_abs(res), ie_abs(ref));
+            if ((absoluteDifference / max) > 0.05) {
+                outlN++;
+                std::cout << "outlN = " << outlN <<
+                  " ref = " << ref <<
+                  " res = " << res <<
+                  " i = " << i <<
+                  " size = " << size <<  std::endl;
+            }
             ASSERT_TRUE(max != 0 && ((absoluteDifference / max) <= threshold))
                                         << "Relative comparison of values expected: " << ref << " and actual: " << res
                                         << " at index " << i << " with threshold " << threshold
