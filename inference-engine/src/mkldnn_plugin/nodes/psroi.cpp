@@ -166,19 +166,15 @@ public:
 
                             float bin_area = static_cast<float>((hend - hstart) * (wend - wstart));
                             if (bin_area) {
-                                int gc = (c * group_size_ + h) * group_size_ + w;
-                                int blockOffset = (gc / block_size) * block_size;
-                                int blockResidual = gc % block_size;
-//                                const auto *bottom_data =
-//                                        src_data + ((roi_batch_ind * channels + gc) * height * width);
+                                const int gc = (c * group_size_ + h) * group_size_ + w;
+                                const int blockOffset = (gc / block_size) * block_size;
+                                const int blockResidual = gc % block_size;
                                 const auto *bottom_data =
                                         src_data + ((roi_batch_ind * channels + blockOffset) * height * width);
                                 float out_sum = 0.0f;
                                 for (int hh = hstart; hh < hend; ++hh)
                                     for (int ww = wstart; ww < wend; ++ww) {
-//                                        out_sum += bottom_data[hh * width + ww];
-                                        int out_ind = (hh * width + ww) * block_size + blockResidual;
-                                        out_sum += bottom_data[out_ind];
+                                        out_sum += bottom_data[(hh * width + ww) * block_size + blockResidual];
                                     }
                                 dst_data[index] = out_sum / bin_area;
                             }
