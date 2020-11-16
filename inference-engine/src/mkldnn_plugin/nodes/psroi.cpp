@@ -168,14 +168,13 @@ public:
                             float bin_area = static_cast<float>((hend - hstart) * (wend - wstart));
                             if (bin_area) {
                                 int gc = (c * group_size_ + h) * group_size_ + w;
-                                int blockOffset = (gc / block_size) * block_size;
                                 int blockResidual = gc % block_size;
                                 const auto *bottom_data =
-                                        src_data + ((roi_batch_ind * channels + blockOffset) * height * width);
+                                        src_data + ((roi_batch_ind * channels + (gc / block_size) * block_size) * height * width);
                                 float out_sum = 0.0f;
                                 int heightIndexBound = hend * blockOffset;
-                                int weightIndexBound = wend * blockOffset;
-                                for (int hh = hstart * blockOffset; hh < heightIndexBound; hh += blockOffset) {
+                                int weightIndexBound = wend * block_size;
+                                for (int hh = hstart * width * block_size; hh < heightIndexBound; hh += blockOffset) {
                                     for (int ww = wstart * block_size; ww < weightIndexBound; ww += block_size) {
                                         out_sum += bottom_data[hh + ww + blockResidual];
                                     }
