@@ -735,6 +735,8 @@ void MKLDNNNormalizeNode::getSupportedDescriptors() {
     size_t channels = 1lu;
     if (layout == Layout::NCHW || layout == Layout::NC)
         channels = inDims[1];
+    else if (layout == Layout::CHW)
+        channels = inDims[0];
     else
         THROW_IE_EXCEPTION << errPrefix << "has unsupported layout: '" << layout << "'.";
     const auto weightsSize = tweights->size();
