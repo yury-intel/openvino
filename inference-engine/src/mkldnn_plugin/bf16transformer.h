@@ -42,7 +42,7 @@ class BF16Transformer {
 
     /**
     * Because of singularity of input node, layer, folowing input doesn't support bf16 itself.
-    * We fix it by insertion of convert layer, which has to be removed to reorder in graph optimizer.
+    * We fix it by insertion of convert layer, which has to be replaced to reorder in graph optimizer.
     *
     */
     void insertConvertAfterInput(InferenceEngine::CNNNetwork &network);
