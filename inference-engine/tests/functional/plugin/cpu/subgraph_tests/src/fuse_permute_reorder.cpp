@@ -35,12 +35,13 @@ void FusePermuteAndReorderTest::SetUp() {
 
     auto order = inputShape.size() == 5 ? std::vector<int64_t>{0, 2, 3, 4, 1} : std::vector<int64_t>{0, 2, 3, 1};
     auto memFmt = inputShape.size() == 5 ? ndhwc : nhwc;
+    inFmts = outFmts = {memFmt};
 
     auto constOrder = ngraph::builder::makeConstant(ngraph::element::i64, {inputShape.size()}, order);
 
     auto permute = std::make_shared<ngraph::opset5::Transpose>(paramOuts[0], constOrder);
 
-    permute->get_rt_info() = setCPUInfo({memFmt}, {memFmt}, {});
+    permute->get_rt_info() = getCPUInfo();
 
     ngraph::ResultVector results{std::make_shared<ngraph::opset5::Result>(permute)};
     function = std::make_shared<ngraph::Function>(results, params, "PermuteReorder");

@@ -156,8 +156,8 @@ const std::vector<ngraph::helpers::ReductionType> reductionTypes = {
 //        ngraph::helpers::ReductionType::Sum, //optimized out during the graph transformations
         ngraph::helpers::ReductionType::Min,
         ngraph::helpers::ReductionType::Prod,
-        ngraph::helpers::ReductionType::L1,
-        ngraph::helpers::ReductionType::L2,
+//        ngraph::helpers::ReductionType::L1,
+//        ngraph::helpers::ReductionType::L2,
 };
 
 const std::vector<ngraph::helpers::ReductionType> reductionLogicalTypes = {
@@ -299,12 +299,12 @@ INSTANTIATE_TEST_CASE_P(
         ReduceCPULayerTest::getTestCaseName
 );
 
-INSTANTIATE_TEST_CASE_P(
-        smoke_ReduceLogicalOneAxis_CPU,
-        ReduceCPULayerTest,
-        paramsOneAxisLogical,
-        ReduceCPULayerTest::getTestCaseName
-);
+//INSTANTIATE_TEST_CASE_P(
+//        smoke_ReduceLogicalOneAxis_CPU,
+//        ReduceCPULayerTest,
+//        paramsOneAxisLogical,
+//        ReduceCPULayerTest::getTestCaseName
+//);
 
 INSTANTIATE_TEST_CASE_P(
         smoke_Reduce_ReductionTypes_CPU,
@@ -327,26 +327,26 @@ INSTANTIATE_TEST_CASE_P(
         ReduceCPULayerTest::getTestCaseName
 );
 
-INSTANTIATE_TEST_CASE_P(
-        smoke_ReduceLogical_ReductionTypes_CPU,
-        ReduceCPULayerTest,
-        params_MultiAxisLogical,
-        ReduceCPULayerTest::getTestCaseName
-);
+//INSTANTIATE_TEST_CASE_P(
+//        smoke_ReduceLogical_ReductionTypes_CPU,
+//        ReduceCPULayerTest,
+//        params_MultiAxisLogical,
+//        ReduceCPULayerTest::getTestCaseName
+//);
 
-INSTANTIATE_TEST_CASE_P(
-        smoke_ReduceLogical4D_ReductionTypes_CPU,
-        ReduceCPULayerTest,
-        params_MultiAxisLogical4D,
-        ReduceCPULayerTest::getTestCaseName
-);
+//INSTANTIATE_TEST_CASE_P(
+//        smoke_ReduceLogical4D_ReductionTypes_CPU,
+//        ReduceCPULayerTest,
+//        params_MultiAxisLogical4D,
+//        ReduceCPULayerTest::getTestCaseName
+//);
 
-INSTANTIATE_TEST_CASE_P(
-        smoke_ReduceLogical5D_ReductionTypes_CPU,
-        ReduceCPULayerTest,
-        params_MultiAxisLogical5D,
-        ReduceCPULayerTest::getTestCaseName
-);
+//INSTANTIATE_TEST_CASE_P(
+//        smoke_ReduceLogical5D_ReductionTypes_CPU,
+//        ReduceCPULayerTest,
+//        params_MultiAxisLogical5D,
+//        ReduceCPULayerTest::getTestCaseName
+//);
 } // namespace
 } // namespace CPULayerTestsDefinitions
 
