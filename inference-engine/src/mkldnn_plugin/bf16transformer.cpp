@@ -352,7 +352,7 @@ void BF16Transformer::insertConvertAfterInput(InferenceEngine::CNNNetwork &netwo
             for (size_t o = 0; o < iter->insData.size(); o++) {
                 if (inputs.find(iter->insData[o].lock()->getName()) != inputs.end()) {
                     std::string iterType = iter->type;
-                    if (CaselessEq<std::string>()(iterType, "convolution")) {
+                    if (CaselessEq<std::string>()(iterType, "convolution") || CaselessEq<std::string>()(iterType, "fullyconnected")) {
                         // TODO: have to be removed after adding suitable implementation for convolution
                         break;
                     }

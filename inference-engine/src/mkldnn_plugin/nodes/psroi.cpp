@@ -51,18 +51,19 @@ public:
             trans_std_ = layer->GetParamAsFloat("trans_std", 1);
 
             Precision inputPrecision = layer->insData[0].lock()->getTensorDesc().getPrecision();
+
             if (no_trans_) {
                 addConfig(layer, {DataConfigurator(ConfLayout::PLN, inputPrecision), DataConfigurator(ConfLayout::PLN, Precision::FP32)},
-                                 {DataConfigurator(ConfLayout::PLN, inputPrecision)});
+                                 {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
 
                 addConfig(layer, {DataConfigurator(ConfLayout::BLK16, inputPrecision), DataConfigurator(ConfLayout::PLN, Precision::FP32)},
-                                 {DataConfigurator(ConfLayout::PLN, inputPrecision)});
+                                 {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
             } else {
                 addConfig(layer, {DataConfigurator(ConfLayout::PLN, inputPrecision), DataConfigurator(ConfLayout::PLN, Precision::FP32),
-                                  DataConfigurator(ConfLayout::PLN, Precision::FP32)}, {DataConfigurator(ConfLayout::PLN, inputPrecision)});
+                                  DataConfigurator(ConfLayout::PLN, Precision::FP32)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
 
                 addConfig(layer, {DataConfigurator(ConfLayout::BLK16, inputPrecision), DataConfigurator(ConfLayout::PLN, Precision::FP32),
-                                  DataConfigurator(ConfLayout::PLN, Precision::FP32)}, {DataConfigurator(ConfLayout::PLN, inputPrecision)});
+                                  DataConfigurator(ConfLayout::PLN, Precision::FP32)}, {DataConfigurator(ConfLayout::PLN, Precision::FP32)});
             }
         } catch (InferenceEngine::details::InferenceEngineException &ex) {
             errorMsg = ex.what();
@@ -298,8 +299,8 @@ public:
                        ResponseDesc *resp) noexcept override {
         auto inputPrec = inputs[0]->getTensorDesc().getPrecision();
         auto outputPrec = outputs[0]->getTensorDesc().getPrecision();
-        if (inputPrec == Precision::BF16 && outputPrec == Precision::BF16) {
-            return executeSpecified<bfloat16_t, bfloat16_t>(inputs, outputs, resp);
+        if (inputPrec == Precision::BF16 && outputPrec == Precision::FP32) {
+            return executeSpecified<bfloat16_t, float>(inputs, outputs, resp);
         } else if (inputPrec == Precision::FP32 && outputPrec == Precision::FP32) {
             return executeSpecified<float, float>(inputs, outputs, resp);
         } else {

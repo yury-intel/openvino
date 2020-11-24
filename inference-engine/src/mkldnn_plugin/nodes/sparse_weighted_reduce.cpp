@@ -52,22 +52,9 @@ public:
                 THROW_IE_EXCEPTION << layer->name << " Incorrect precision of the input tensors.";
             }
 
-            if (input_parameters_table_precision != Precision::FP32) {
-                THROW_IE_EXCEPTION << layer->name
-                                   << " Incorrect precision of the input parameters table values. Only FP32 is supported!";
-            }
-
             if (input_default_value_precision != Precision::I32) {
                 THROW_IE_EXCEPTION << layer->name
                                    << " Incorrect precision of the input default value. Only I32 is supported!";
-            }
-
-            if (with_weights) {
-                Precision input_weights_precision = layer->insData[INPUT_WEIGHTS_PORT].lock()->getTensorDesc().getPrecision();
-                if (input_weights_precision != Precision::FP32) {
-                    THROW_IE_EXCEPTION << layer->name
-                                       << " Incorrect precision of the input weights values. Only FP32 is supported!";
-                }
             }
 
             // check dimensions of input tensors
