@@ -50,6 +50,7 @@ enum Type {
     Reshape,
     Tile,
     SimplerNMS,
+    ROIAlign,
     ROIPooling,
     BatchNormalization,
     Flatten,
@@ -127,6 +128,8 @@ static std::string NameFromType(Type type) {
             return "Tile";
         case SimplerNMS:
             return "SimplerNMS";
+        case ROIAlign:
+            return "ROIAlign";
         case ROIPooling:
             return "ROIPooling";
         case BatchNormalization:
