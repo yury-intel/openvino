@@ -37,7 +37,6 @@ private:
     int sampling_ratio = 2;
     float spatial_scale = 1.0f;
     ROIAlignOpType opType = Max;
-
 };
 
 }  // namespace MKLDNNPlugin

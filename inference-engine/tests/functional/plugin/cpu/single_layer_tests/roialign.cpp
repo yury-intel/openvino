@@ -13,29 +13,29 @@ using namespace CPUTestUtils;
 
 namespace CPULayerTestsDefinitions {
 namespace {
-    int spatialBinX;
-    int spatialBinY;
+    int pooled_h;
+    int pooled_w;
     float spatialScale;
-    size_t groupSize;
-    size_t outputDim;
+    int samplingRatio;
     std::vector<float> proposalVector;
+    std::vector<float> roiIdxVector;
     std::string nonDeformableMode;
     std::vector<size_t> inputShape;
 }  // namespace
 
 typedef std::tuple<
-        size_t,  // channels count of output
-        size_t,  // offset for iteration across output pulled bins
-        float,  // scale for given region considering actual input size
         int,  // bin's column count
         int,  // bin's row count
-        std::vector<float>,  // coordinate vector: batch id, left_top_x, left_top_y, right_bottom_x, right_bottom_y
-        std::string,  // mode for non-deformable psroi
+        float,  // scale for given region considering actual input size
+        int,   // pooling ratio
+        std::vector<float>,  // coordinate vector: left_top_x, left_top_y, right_bottom_x, right_bottom_y
+        std::vector<float>,  // batch id's vector
+        std::string,  // mode
         std::vector<size_t>  // feature map shape
-> PsroipoolingSpecificParams;
+> ROIAlignSpecificParams;
 
 typedef std::tuple<
-        PsroipoolingSpecificParams,
+        ROIAlignSpecificParams,
         InferenceEngine::Precision,     // Net precision
         InferenceEngine::Precision,     // Input precision
         InferenceEngine::Precision,     // Output precision
@@ -62,14 +62,6 @@ public:
         result << CPUTestsBase::getTestCaseName(cpuParams);
         return result.str();
     }
-
-    void Run() override {
-        SKIP_IF_CURRENT_TEST_IS_DISABLED()
-
-        LoadNetwork();
-        Infer();
-        PsroiValidate();
-    }
 protected:
     void SetUp() override {
         CPULayerTestsDefinitions::PsroipoolingLayerTestParams basicParamsSet;
@@ -78,23 +70,28 @@ protected:
 
         std::tie(inFmts, outFmts, priority, selectedType) = cpuParams;
 
-        CPULayerTestsDefinitions::PsroipoolingSpecificParams psroiParams;
+        CPULayerTestsDefinitions::ROIAlignSpecificParams psroiParams;
         std::vector<size_t> inputShape_unused;
         std::vector<size_t> targetShape;
         auto netPrecision = InferenceEngine::Precision::UNSPECIFIED;
         std::tie(psroiParams, netPrecision, inPrc, outPrc, inLayout, outLayout, inputShape_unused, targetShape, targetDevice) = basicParamsSet;
-        std::tie(outputDim, groupSize, spatialScale, spatialBinX, spatialBinY,
-                 proposalVector, nonDeformableMode, inputShape) = psroiParams;
+        std::tie(pooled_h, pooled_w, spatialScale, samplingRatio,
+                 proposalVector, roiIdxVector, nonDeformableMode, inputShape) = psroiParams;
         std::shared_ptr<ngraph::opset1::Constant> coords = nullptr;
-        ngraph::Shape coordsShape = { proposalVector.size(), 5 };
+        std::shared_ptr<ngraph::opset1::Constant> roisIdx = nullptr;
+
+        ngraph::Shape coordsShape = { proposalVector.size() / 4, 4 };
+        ngraph::Shape idxVectorShape = { roiIdxVector.size() };
+
         ngraph::element::Type ntype = inPrc == InferenceEngine::Precision::FP32 ? ngraph::element::f32 : ngraph::element::bf16;
         coords = std::make_shared<ngraph::opset1::Constant>(ntype, coordsShape, proposalVector.data());
+        roisIdx = std::make_shared<ngraph::opset1::Constant>(ntype, idxVectorShape, roiIdxVector.data());
 
         auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
         auto params = ngraph::builder::makeParams(ngPrc, {inputShape});
 
-        auto psroi = std::make_shared<ngraph::opset3::ROIAlign>(params[0], coords, outputDim, ,
-                                                                    spatialScale, spatialBinX, spatialBinY, nonDeformableMode);
+        auto psroi = std::make_shared<ngraph::opset3::ROIAlign>(params[0], coords, roisIdx, pooled_h, pooled_w,
+                samplingRatio, spatialScale, nonDeformableMode);
         psroi->get_rt_info() = getCPUInfo();
         if (Precision::BF16 == netPrecision) {
             selectedType = "unknown_BF16";
@@ -104,24 +101,7 @@ protected:
 
         threshold = 1.0f;
         const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(psroi)};
-        function = std::make_shared<ngraph::Function>(results, params, "PSROIPooling");
-    }
-private:
-    void PsroiValidate() {
-        auto expectedOutputs = CalculateRefs();
-        const auto& actualOutputs = GetOutputs();
-        if (expectedOutputs.empty()) {
-            return;
-        }
-
-        IE_ASSERT(actualOutputs.size() == expectedOutputs.size())
-        << "nGraph interpreter has " << expectedOutputs.size() << " outputs, while IE " << actualOutputs.size();
-
-        for (std::size_t outputIndex = 0; outputIndex < expectedOutputs.size(); ++outputIndex) {
-            const auto& expected = expectedOutputs[outputIndex];
-            const auto& actual = actualOutputs[outputIndex];
-            Compare(expected, actual);
-        }
+        function = std::make_shared<ngraph::Function>(results, params, "ROIAlign");
     }
 };
 
@@ -135,11 +115,11 @@ TEST_P(PsroialignLayerCPUTest, CompareWithRefs) {
 namespace {
 
 /* CPU PARAMS */
-    std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
-        std::vector<CPUSpecificParams> resCPUParams;
-        if (with_cpu_x86_avx512f()) {
+std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
+    std::vector<CPUSpecificParams> resCPUParams;
+    if (with_cpu_x86_avx512f()) {
 //        resCPUParams.push_back(CPUSpecificParams{{nChw16c, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512_FP32"});
-            resCPUParams.push_back(CPUSpecificParams{{}, {}, {}, {}});
+        resCPUParams.push_back(CPUSpecificParams{{}, {}, {}, {}});
 //        resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"jit_avx2"}, "jit_avx2_FP32"});
 //    } else if (with_cpu_x86_avx2()) {
 //        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2_FP32"});
@@ -148,68 +128,68 @@ namespace {
 //    } else if (with_cpu_x86_sse42()) {
 //        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42_FP32"});
 //        resCPUParams.push_back(CPUSpecificParams{{nhwc, x}, {nhwc}, {"jit_sse42"}, "jit_sse42_FP32"});
-        } else {
-            resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"ref"}, "ref_FP32"});
-        }
-        return resCPUParams;
+    } else {
+        resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"ref"}, "ref_FP32"});
     }
+    return resCPUParams;
+}
 
-    const std::vector<InferenceEngine::Precision> netPrecisions = {
-            InferenceEngine::Precision::FP32
-    };
+const std::vector<InferenceEngine::Precision> netPrecisions = {
+        InferenceEngine::Precision::FP32
+};
 
-    const std::vector<int> spatialBinXVector = { 3 };
+const std::vector<int> spatialBinXVector = { 3 };
 
-    const std::vector<int> spatialBinYVector = { 3 };
+const std::vector<int> spatialBinYVector = { 3 };
 
-    const std::vector<float> spatialScaleVector = { 1.0f };
+const std::vector<float> spatialScaleVector = { 1.0f };
 
-    const std::vector<size_t> groupSizeVector = { 2 };
+const std::vector<int> poolingRatioVector = { 2 };
 
-    const std::vector<size_t> outputDimVector = { 1 };
-
-    const std::vector<std::string> noDeformableModeVector = {
+const std::vector<std::string> noDeformableModeVector = {
 //        "bilinear",
-            "max"
-    };
+        "max"
+};
 
-    const std::vector<std::vector<size_t>> inputShapeVector = {
-            SizeVector({ 1, 3240, 10, 10 })
-    };
+const std::vector<std::vector<size_t>> inputShapeVector = {
+        SizeVector({ 1, 3240, 10, 10 })
+};
 
-    const std::vector<std::vector<float>> proposalsVector = {
-            { 0, 4, 4, 5.9, 5.9 }
-    };
+const std::vector<std::vector<float>> proposalsVector = {
+        { 1, 1, 3, 3 }
+};
 
-    const auto psroipoolingNonDeformableParams = ::testing::Combine(
-            ::testing::ValuesIn(outputDimVector),  // channels count of output
-            ::testing::ValuesIn(groupSizeVector),  // offset for iteration across output pulled bins
-            ::testing::ValuesIn(spatialScaleVector),  // scale for given region considering actual input size
-            ::testing::ValuesIn(spatialBinXVector),  // bin's column count
-            ::testing::ValuesIn(spatialBinYVector),  // bin's row count
-            ::testing::ValuesIn(proposalsVector),  // coordinate vector: batch id, left_top_x, left_top_y, right_bottom_x, right_bottom_y
-            ::testing::ValuesIn(noDeformableModeVector),  // mode for non-deformable psroi
-            ::testing::ValuesIn(inputShapeVector)  // feature map shape
-    );
+const std::vector<std::vector<float>> roisIdxVector = {
+        { 0 }
+};
 
-    const auto bigCombine = ::testing::Combine(  // test params
-            ::testing::Combine(  // basic params
-                    psroipoolingNonDeformableParams,  // psroi params
-                    ::testing::ValuesIn(netPrecisions),
-                    ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
-                    ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
-                    ::testing::Values(InferenceEngine::Layout::ANY),
-                    ::testing::Values(InferenceEngine::Layout::ANY),
-                    ::testing::Values(std::vector<size_t>({1, 1, 40, 40})),
-                    ::testing::Values(std::vector<size_t>({1, 1, 50, 60})),
-                    ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-            ::testing::ValuesIn(filterCPUInfoForDevice()));
+const auto psroipoolingNonDeformableParams = ::testing::Combine(
+        ::testing::ValuesIn(spatialBinXVector),  // bin's column count
+        ::testing::ValuesIn(spatialBinYVector),  // bin's row count
+        ::testing::ValuesIn(spatialScaleVector),  // scale for given region considering actual input size
+        ::testing::ValuesIn(poolingRatioVector),  // TODO
+        ::testing::ValuesIn(proposalsVector),  // coordinate vector: left_top_x, left_top_y, right_bottom_x, right_bottom_y
+        ::testing::ValuesIn(roisIdxVector),  // batch id's vector
+        ::testing::ValuesIn(noDeformableModeVector),  // mode for non-deformable psroi
+        ::testing::ValuesIn(inputShapeVector)  // feature map shape
+);
+
+const auto bigCombine = ::testing::Combine(  // test params
+        ::testing::Combine(  // basic params
+                psroipoolingNonDeformableParams,  // psroi params
+                ::testing::ValuesIn(netPrecisions),
+                ::testing::Values(InferenceEngine::Precision::FP32),
+                ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
+                ::testing::Values(InferenceEngine::Layout::ANY),
+                ::testing::Values(InferenceEngine::Layout::ANY),
+                ::testing::Values(std::vector<size_t>({1, 1, 40, 40})),
+                ::testing::Values(std::vector<size_t>({1, 1, 50, 60})),
+                ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+        ::testing::ValuesIn(filterCPUInfoForDevice()));
 //const auto bigCombine = ::testing::ValuesIn(filterCPUInfoForDevice());
 
-    INSTANTIATE_TEST_CASE_P(smoke_PsroiPoolingNonDeformableLayoutTest, PsroialignLayerCPUTest,
-                            bigCombine
-    ,  // cpu params
-                            PsroialignLayerCPUTest::getTestCaseName
-    );
+INSTANTIATE_TEST_CASE_P(smoke_PsroiPoolingNonDeformableLayoutTest, PsroialignLayerCPUTest,
+                        bigCombine,  // cpu params
+                        PsroialignLayerCPUTest::getTestCaseName);
 } // namespace
 } // namespace CPULayerTestsDefinitions

@@ -27,6 +27,10 @@ struct roi_align_test_params {
         size_t c;
     } in2;
 
+    struct {
+        size_t n;
+    } in3;
+
     size_t pooled_h;
     size_t pooled_w;
     std::string method;
@@ -41,114 +45,13 @@ struct roi_align_test_params {
 };
 
 template <typename data_t>
-void ref_roialign(const InferenceEngine::TBlob<data_t> &src, const InferenceEngine::TBlob<data_t> &roi,
-                  InferenceEngine::TBlob<data_t> &dst_blob, roi_align_test_params& params) {
-    data_t* dst = dst_blob.data();
-    const data_t* src_data = src.readOnly();
-    const data_t* src_roi = roi.readOnly();
-
-    int C = src.getTensorDesc().getDims()[1];
-    int H = src.getTensorDesc().getDims()[2];
-    int W = src.getTensorDesc().getDims()[3];
-
-    int ROIS = roi.getTensorDesc().getDims()[0];
-
-    double spatial_scale = params.spatial_scale;
-    int pooled_h = params.pooled_h;
-    int pooled_w = params.pooled_w;
-
-    auto *arg_max_ = new data_t[dst_blob.size()];
-
-    for (size_t i = 0; i < dst_blob.size(); i++) {
-        arg_max_[i] = -1;
-        dst[i] = -FLT_MAX;
-    }
-
-    int roi_off;
-
-    for (int n = 0; n < ROIS; ++n) {
-        if(roi.getTensorDesc().getDims().size() == 4) {
-            roi_off = n*roi.getTensorDesc().getDims()[1]*roi.getTensorDesc().getDims()[2]*roi.getTensorDesc().getDims()[3];
-        }
-        else {
-            roi_off = n*roi.getTensorDesc().getDims()[1];
-        }
-
-        const data_t* src_roi_ptr = &src_roi[roi_off];
-
-        int roi_batch_ind = src_roi_ptr[0];
-        int roi_start_w = round(src_roi_ptr[1] * spatial_scale);
-        int roi_start_h = round(src_roi_ptr[2] * spatial_scale);
-        int roi_end_w = round(src_roi_ptr[3] * spatial_scale);
-        int roi_end_h = round(src_roi_ptr[4] * spatial_scale);
-
-        int roi_height = (std::max)(roi_end_h - roi_start_h + 1, 1);
-        int roi_width = (std::max)(roi_end_w - roi_start_w + 1, 1);
-
-        for (int c = 0; c < C; ++c) {
-
-            for (int ph = 0; ph < pooled_h; ++ph) {
-                for (int pw = 0; pw < pooled_w; ++pw) {
-                    int hstart = (ph * roi_height) / pooled_h;
-                    if ( (hstart * pooled_h) > (ph * roi_height) ) {
-                        --hstart;
-                    }
-
-                    int wstart = (pw * roi_width) / pooled_w;
-                    if ( (wstart * pooled_w) > (pw * roi_width) ) {
-                        --wstart;
-                    }
-
-                    int hend = ((ph + 1) * roi_height) / pooled_h;
-                    if ( (hend * pooled_h) < ((ph + 1) * roi_height) ) {
-                        ++hend;
-                    }
-
-                    int wend = ((pw + 1) * roi_width) / pooled_w;
-                    if ( (wend * pooled_w) < ((pw + 1) * roi_width) ) {
-                        ++wend;
-                    }
-
-                    hstart = (std::min)((std::max)(hstart + roi_start_h, 0), H);
-                    hend = (std::min)((std::max)(hend + roi_start_h, 0), H);
-                    wstart = (std::min)((std::max)(wstart + roi_start_w, 0), W);
-                    wend = (std::min)((std::max)(wend + roi_start_w, 0), W);
-
-                    bool is_empty = (hend <= hstart) || (wend <= wstart);
-
-                    const int pool_index = n*dst_blob.getTensorDesc().getDims()[3]*dst_blob.getTensorDesc().getDims()[2]*dst_blob.getTensorDesc().getDims()[1] +
-                                           c*dst_blob.getTensorDesc().getDims()[3]*dst_blob.getTensorDesc().getDims()[2] + ph*dst_blob.getTensorDesc().getDims()[3] + pw;
-
-                    if (is_empty) {
-                        dst[pool_index] = 0;
-                        arg_max_[pool_index] = -1;
-                    }
-
-                    for (int h = hstart; h < hend; ++h) {
-                        for (int w = wstart; w < wend; ++w) {
-                            int src_index_data = roi_batch_ind*src.getTensorDesc().getDims()[1]*src.getTensorDesc().getDims()[2]*src.getTensorDesc().getDims()[3] +
-                                                 c*src.getTensorDesc().getDims()[2]*src.getTensorDesc().getDims()[3] + h*src.getTensorDesc().getDims()[3] + w;
-                            data_t batch_data = src_data[src_index_data];
-
-                            if (batch_data > dst[pool_index]) {
-                                dst[pool_index] = batch_data;
-                                arg_max_[pool_index] = batch_data;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    delete[] arg_max_;
-}
-
-template <typename data_t>
 void ref_roialign1(const InferenceEngine::TBlob<data_t> &src, const InferenceEngine::TBlob<data_t> &roi,
-                   InferenceEngine::TBlob<data_t> &dst_blob, roi_align_test_params& params) {
+                   const InferenceEngine::TBlob<data_t> &roi_idx, InferenceEngine::TBlob<data_t> &dst_blob, roi_align_test_params& params) {
     data_t* dst = dst_blob.data();
     const data_t* src_data = src.readOnly();
     const data_t* src_roi = roi.readOnly();
+    const data_t* src_roi_idx = roi_idx.readOnly();
+
 
     int C = src.getTensorDesc().getDims()[1];
     int H = src.getTensorDesc().getDims()[2];
@@ -175,14 +78,16 @@ void ref_roialign1(const InferenceEngine::TBlob<data_t> &src, const InferenceEng
     for (int n = 0; n < ROIS; ++n) {
         // TODO - check boundaries of batch index
 
-        roi_off = n * 5;  // if batch id contained in same input
+        roi_off = n * 4;  // if batch id contained in same input
         const data_t* src_roi_ptr = &src_roi[roi_off];
+        const data_t* src_roi_idx_ptr = &src_roi_idx[n];
+
 // TODO: remove to another input
-        int roi_batch_ind = src_roi_ptr[0];
-        data_t x1 = src_roi_ptr[1] * spatial_scale;
-        data_t y1 = src_roi_ptr[2] * spatial_scale;
-        data_t x2 = src_roi_ptr[3] * spatial_scale;
-        data_t y2 = src_roi_ptr[4] * spatial_scale;
+        int roi_batch_ind = src_roi_idx_ptr[0];
+        data_t x1 = src_roi_ptr[0] * spatial_scale;
+        data_t y1 = src_roi_ptr[1] * spatial_scale;
+        data_t x2 = src_roi_ptr[2] * spatial_scale;
+        data_t y2 = src_roi_ptr[3] * spatial_scale;
 
         data_t roi_height = std::max(y2 - y1, 1.0f);
         data_t roi_width = std::max(x2 - x1, 1.0f);
@@ -354,22 +259,32 @@ class MKLDNNGraphRoiAlignTests: public TestsCommon,
                 </port>
             </output>
         </layer>
-        <layer name="roi_align" id="2" type="ROIAlign" precision="FP32">
+        <layer name="in3" type="Input" precision="FP32" id="2">
+            <output>
+                <port id="2">
+                    <dim>_IN2_</dim>
+                </port>
+            </output>
+        </layer>
+        <layer name="roi_align" id="3" type="ROIAlign" precision="FP32">
             <data pooled_h="_PH_" pooled_w="_PW_" method="_MTH_" spatial_scale="_SS_" sampling_ratio="_SR_"/>
             <input>
-                <port id="2">
+                <port id="3">
                     <dim>_IN1_</dim>
                     <dim>_IC1_</dim>
                     <dim>_IH1_</dim>
                     <dim>_IW1_</dim>
                 </port>
-                <port id="3">
+                <port id="4">
                     <dim>_IN2_</dim>
                     <dim>_IC2_</dim>
                 </port>
+                <port id="5">
+                    <dim>_IN2_</dim>
+                </port>
             </input>
             <output>
-                <port id="4">
+                <port id="6">
                     <dim>_ON_</dim>
                     <dim>_OC_</dim>
                     <dim>_OH_</dim>
@@ -379,8 +294,9 @@ class MKLDNNGraphRoiAlignTests: public TestsCommon,
         </layer>
     </layers>
     <edges>
-        <edge from-layer="0" from-port="0" to-layer="2" to-port="2"/>
-        <edge from-layer="1" from-port="1" to-layer="2" to-port="3"/>
+        <edge from-layer="0" from-port="0" to-layer="3" to-port="3"/>
+        <edge from-layer="1" from-port="1" to-layer="3" to-port="4"/>
+        <edge from-layer="2" from-port="2" to-layer="3" to-port="5"/>
     </edges>
 </Net>
 )V0G0N";
@@ -453,16 +369,28 @@ protected:
 
             InferenceEngine::Blob::Ptr roi = InferenceEngine::make_shared_blob<float>({InferenceEngine::Precision::FP32, dims_roi, InferenceEngine::NC});
             roi->allocate();
-            fill_roi_data(roi->buffer(), roi->size());
+            fill_roi_data2(roi->buffer(), roi->size());
+
+            InferenceEngine::SizeVector dims_roi_idx = {p.in2.n};
 
             InferenceEngine::TBlob<float>* roiPtr = dynamic_cast<InferenceEngine::TBlob<float>*>(roi.get());
 
+            InferenceEngine::Blob::Ptr roi_idx = InferenceEngine::make_shared_blob<float>({InferenceEngine::Precision::FP32, dims_roi_idx, InferenceEngine::C});
+            roi_idx->allocate();
+            fill_roi_idx_data(roi_idx->buffer(), roi_idx->size());
+
+            InferenceEngine::TBlob<float>* roiIdxPtr = dynamic_cast<InferenceEngine::TBlob<float>*>(roi_idx.get());
+
+
             if (roiPtr == nullptr)
+                FAIL() << "Cannot cast blob to TBlob<float>.";
+            if (roiIdxPtr == nullptr)
                 FAIL() << "Cannot cast blob to TBlob<float>.";
 
             InferenceEngine::BlobMap srcs;
             srcs.insert(std::pair<std::string, InferenceEngine::Blob::Ptr>("in1", src));
             srcs.insert(std::pair<std::string, InferenceEngine::Blob::Ptr>("in2", roi));
+            srcs.insert(std::pair<std::string, InferenceEngine::Blob::Ptr>("in3", roi_idx));
 
             InferenceEngine::OutputsDataMap out;
             out = network.getOutputsInfo();
@@ -480,7 +408,7 @@ protected:
             InferenceEngine::TBlob<float> dst_ref(item.second->getTensorDesc());
             dst_ref.allocate();
 
-            ref_roialign1(*srcPtr, *roiPtr, dst_ref, p);
+            ref_roialign1(*srcPtr, *roiPtr, *roiIdxPtr, dst_ref, p);
 
             compare(*output, dst_ref);
         } catch (const InferenceEngine::details::InferenceEngineException &e) {
@@ -499,6 +427,22 @@ protected:
             }
         }
     }
+
+    static void fill_roi_data2(float *data, size_t size, size_t duty_ratio = 10) {
+        for (size_t i = 0; i < size; i++) {
+            if (i % 4 == 0 || i % 4 == 2) {
+                data[i] = 1.0f;
+            } else if (i % 4 == 1 || i % 4 == 3) {
+                data[i] = 3.0f;
+            }
+        }
+    }
+
+    static void fill_roi_idx_data(float *data, size_t size, size_t duty_ratio = 10) {
+        for (size_t i = 0; i < size; i++) {
+            data[i] = 0.0f;
+        }
+    }
 };
 
 TEST_P(MKLDNNGraphRoiAlignTests, TestsRoiAlign) {}
@@ -510,7 +454,8 @@ INSTANTIATE_TEST_CASE_P(
         ::testing::Values(
                 roi_align_test_params{
                         {1, 256, 39, 64},  // in1
-                        {150, 5},          // in2
+                        {150, 4},          // in2
+                        {150},          // in3
                         6, 6,              // pool H and W
                         "max",             // pooling method
                         1.0f,           // spatial_scale
