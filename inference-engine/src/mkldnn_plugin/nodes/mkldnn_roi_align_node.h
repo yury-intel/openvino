@@ -14,11 +14,8 @@ namespace MKLDNNPlugin {
 
 enum ROIAlignOpType {
     Max,
-    Avg,
-    Bilinear
+    Avg
 };
-
-
 
 class MKLDNNROIAlignNode : public MKLDNNNode {
 public:
@@ -38,6 +35,5 @@ private:
     float spatial_scale = 1.0f;
     ROIAlignOpType opType = Max;
 };
-
 }  // namespace MKLDNNPlugin
 

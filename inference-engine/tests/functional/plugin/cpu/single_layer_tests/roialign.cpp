@@ -18,20 +18,20 @@ namespace {
     float spatialScale;
     int samplingRatio;
     std::vector<float> proposalVector;
-    std::vector<float> roiIdxVector;
-    std::string nonDeformableMode;
+    std::vector<size_t> roiIdxVector;
+    std::string mode;
     std::vector<size_t> inputShape;
 }  // namespace
 
 typedef std::tuple<
-        int,  // bin's column count
-        int,  // bin's row count
-        float,  // scale for given region considering actual input size
-        int,   // pooling ratio
-        std::vector<float>,  // coordinate vector: left_top_x, left_top_y, right_bottom_x, right_bottom_y
-        std::vector<float>,  // batch id's vector
-        std::string,  // mode
-        std::vector<size_t>  // feature map shape
+        int,                  // bin's column count
+        int,                  // bin's row count
+        float,                // scale for given region considering actual input size
+        int,                  // pooling ratio
+        std::vector<float>,   // coordinate vector: left_top_x, left_top_y, right_bottom_x, right_bottom_y
+        std::vector<size_t>,  // batch id's vector
+        std::string,          // pooling mode
+        std::vector<size_t>   // feature map shape
 > ROIAlignSpecificParams;
 
 typedef std::tuple<
@@ -44,39 +44,40 @@ typedef std::tuple<
         InferenceEngine::SizeVector,    // Input shapes
         InferenceEngine::SizeVector,    // Target shapes
         LayerTestsUtils::TargetDevice   // Device name
-> PsroipoolingLayerTestParams;
+> ROIALignLayerTestParams;
 
 typedef std::tuple<
-        CPULayerTestsDefinitions::PsroipoolingLayerTestParams,
-        CPUSpecificParams> PsroipoolingLayerCPUTestParamsSet;
+        CPULayerTestsDefinitions::ROIALignLayerTestParams,
+        CPUSpecificParams> ROIAlignLayerCPUTestParamsSet;
 
-class PsroialignLayerCPUTest : public testing::WithParamInterface<PsroipoolingLayerCPUTestParamsSet>,
-                               virtual public LayerTestsUtils::LayerTestsCommon, public CPUTestsBase {
+class ROIAlignLayerCPUTest : public testing::WithParamInterface<ROIAlignLayerCPUTestParamsSet>,
+                             virtual public LayerTestsUtils::LayerTestsCommon, public CPUTestsBase {
 public:
-    static std::string getTestCaseName(testing::TestParamInfo<PsroipoolingLayerCPUTestParamsSet> obj) {
-        CPULayerTestsDefinitions::PsroipoolingLayerTestParams basicParamsSet;
+    static std::string getTestCaseName(testing::TestParamInfo<ROIAlignLayerCPUTestParamsSet> obj) {
+        CPULayerTestsDefinitions::ROIALignLayerTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
         std::tie(basicParamsSet, cpuParams) = obj.param;
         std::ostringstream result;
+        result << "ROIAlignTest_";
         result << std::to_string(obj.index);
         result << CPUTestsBase::getTestCaseName(cpuParams);
         return result.str();
     }
 protected:
     void SetUp() override {
-        CPULayerTestsDefinitions::PsroipoolingLayerTestParams basicParamsSet;
+        CPULayerTestsDefinitions::ROIALignLayerTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
         std::tie(basicParamsSet, cpuParams) = this->GetParam();
 
         std::tie(inFmts, outFmts, priority, selectedType) = cpuParams;
 
-        CPULayerTestsDefinitions::ROIAlignSpecificParams psroiParams;
+        CPULayerTestsDefinitions::ROIAlignSpecificParams roiAlignParams;
         std::vector<size_t> inputShape_unused;
         std::vector<size_t> targetShape;
         auto netPrecision = InferenceEngine::Precision::UNSPECIFIED;
-        std::tie(psroiParams, netPrecision, inPrc, outPrc, inLayout, outLayout, inputShape_unused, targetShape, targetDevice) = basicParamsSet;
+        std::tie(roiAlignParams, netPrecision, inPrc, outPrc, inLayout, outLayout, inputShape_unused, targetShape, targetDevice) = basicParamsSet;
         std::tie(pooled_h, pooled_w, spatialScale, samplingRatio,
-                 proposalVector, roiIdxVector, nonDeformableMode, inputShape) = psroiParams;
+                 proposalVector, roiIdxVector, mode, inputShape) = roiAlignParams;
         std::shared_ptr<ngraph::opset1::Constant> coords = nullptr;
         std::shared_ptr<ngraph::opset1::Constant> roisIdx = nullptr;
 
@@ -85,27 +86,27 @@ protected:
 
         ngraph::element::Type ntype = inPrc == InferenceEngine::Precision::FP32 ? ngraph::element::f32 : ngraph::element::bf16;
         coords = std::make_shared<ngraph::opset1::Constant>(ntype, coordsShape, proposalVector.data());
-        roisIdx = std::make_shared<ngraph::opset1::Constant>(ntype, idxVectorShape, roiIdxVector.data());
+        roisIdx = std::make_shared<ngraph::opset1::Constant>(ngraph::element::i32, idxVectorShape, roiIdxVector.data());
 
         auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
         auto params = ngraph::builder::makeParams(ngPrc, {inputShape});
 
-        auto psroi = std::make_shared<ngraph::opset3::ROIAlign>(params[0], coords, roisIdx, pooled_h, pooled_w,
-                samplingRatio, spatialScale, nonDeformableMode);
-        psroi->get_rt_info() = getCPUInfo();
+        auto roialign = std::make_shared<ngraph::opset3::ROIAlign>(params[0], coords, roisIdx, pooled_h, pooled_w,
+                                                                   samplingRatio, spatialScale, mode);
+        roialign->get_rt_info() = getCPUInfo();
         if (Precision::BF16 == netPrecision) {
             selectedType = "unknown_BF16";
         } else if (Precision::FP32 == netPrecision) {
             selectedType = "unknown_FP32";
         }
 
-        threshold = 1.0f;
-        const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(psroi)};
+        threshold = 0.0f;
+        const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(roialign)};
         function = std::make_shared<ngraph::Function>(results, params, "ROIAlign");
     }
 };
 
-TEST_P(PsroialignLayerCPUTest, CompareWithRefs) {
+TEST_P(ROIAlignLayerCPUTest, CompareWithRefs) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
 
     Run();
@@ -138,45 +139,45 @@ const std::vector<InferenceEngine::Precision> netPrecisions = {
         InferenceEngine::Precision::FP32
 };
 
-const std::vector<int> spatialBinXVector = { 3 };
+const std::vector<int> spatialBinXVector = { 2 };
 
-const std::vector<int> spatialBinYVector = { 3 };
+const std::vector<int> spatialBinYVector = { 2 };
 
 const std::vector<float> spatialScaleVector = { 1.0f };
 
 const std::vector<int> poolingRatioVector = { 2 };
 
 const std::vector<std::string> noDeformableModeVector = {
-//        "bilinear",
+        "avg",
         "max"
 };
 
 const std::vector<std::vector<size_t>> inputShapeVector = {
-        SizeVector({ 1, 3240, 10, 10 })
+        SizeVector({ 1, 10, 20, 20 })
 };
 
 const std::vector<std::vector<float>> proposalsVector = {
-        { 1, 1, 3, 3 }
+        { 1, 1, 19, 19 }
 };
 
-const std::vector<std::vector<float>> roisIdxVector = {
+const std::vector<std::vector<size_t>> roisIdxVector = {
         { 0 }
 };
 
-const auto psroipoolingNonDeformableParams = ::testing::Combine(
-        ::testing::ValuesIn(spatialBinXVector),  // bin's column count
-        ::testing::ValuesIn(spatialBinYVector),  // bin's row count
-        ::testing::ValuesIn(spatialScaleVector),  // scale for given region considering actual input size
-        ::testing::ValuesIn(poolingRatioVector),  // TODO
-        ::testing::ValuesIn(proposalsVector),  // coordinate vector: left_top_x, left_top_y, right_bottom_x, right_bottom_y
-        ::testing::ValuesIn(roisIdxVector),  // batch id's vector
-        ::testing::ValuesIn(noDeformableModeVector),  // mode for non-deformable psroi
-        ::testing::ValuesIn(inputShapeVector)  // feature map shape
+const auto roiAlignNonDeformableParams = ::testing::Combine(
+        ::testing::ValuesIn(spatialBinXVector),       // bin's column count
+        ::testing::ValuesIn(spatialBinYVector),       // bin's row count
+        ::testing::ValuesIn(spatialScaleVector),      // scale for given region considering actual input size
+        ::testing::ValuesIn(poolingRatioVector),      // pooling ratio for bin
+        ::testing::ValuesIn(proposalsVector),         // coordinate vector: left_top_x, left_top_y, right_bottom_x, right_bottom_y
+        ::testing::ValuesIn(roisIdxVector),           // batch id's vector
+        ::testing::ValuesIn(noDeformableModeVector),  // pooling mode
+        ::testing::ValuesIn(inputShapeVector)         // feature map shape
 );
 
-const auto bigCombine = ::testing::Combine(  // test params
-        ::testing::Combine(  // basic params
-                psroipoolingNonDeformableParams,  // psroi params
+const auto bigCombine = ::testing::Combine(
+        ::testing::Combine(
+                roiAlignNonDeformableParams,
                 ::testing::ValuesIn(netPrecisions),
                 ::testing::Values(InferenceEngine::Precision::FP32),
                 ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
@@ -186,10 +187,8 @@ const auto bigCombine = ::testing::Combine(  // test params
                 ::testing::Values(std::vector<size_t>({1, 1, 50, 60})),
                 ::testing::Values(CommonTestUtils::DEVICE_CPU)),
         ::testing::ValuesIn(filterCPUInfoForDevice()));
-//const auto bigCombine = ::testing::ValuesIn(filterCPUInfoForDevice());
 
-INSTANTIATE_TEST_CASE_P(smoke_PsroiPoolingNonDeformableLayoutTest, PsroialignLayerCPUTest,
-                        bigCombine,  // cpu params
-                        PsroialignLayerCPUTest::getTestCaseName);
+INSTANTIATE_TEST_CASE_P(smoke_ROIAlignLayoutTest, ROIAlignLayerCPUTest,
+                        bigCombine, ROIAlignLayerCPUTest::getTestCaseName);
 } // namespace
 } // namespace CPULayerTestsDefinitions

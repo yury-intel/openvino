@@ -60,11 +60,9 @@ void MKLDNNROIAlignNode::getSupportedDescriptors() {
     pooled_w = genericLayer->GetParamAsInt("pooled_w");
     spatial_scale = genericLayer->GetParamAsFloat("spatial_scale");
     sampling_ratio = genericLayer->GetParamAsInt("sampling_ratio");
-    std::string m = genericLayer->GetParamAsString("method", "max");
+    std::string m = genericLayer->GetParamAsString("mode", "max");
     if (m == "max") {
         opType = ROIAlignOpType::Max;
-    } else if (m == "bilinear") {  // TODO: remove
-        opType = ROIAlignOpType::Bilinear;
     } else if (m == "avg") {
         opType = ROIAlignOpType::Avg;
     } else {
@@ -107,7 +105,7 @@ void MKLDNNROIAlignNode::initSupportedPrimitiveDescriptors() {
 //    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, format);
     config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), memory::f32, memory::nchw);
     config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
-    config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::f32, memory::x);
+    config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
     config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, memory::nchw);
     supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nchw});
 }
@@ -125,7 +123,7 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
 
     const auto *src_data = reinterpret_cast<const float *>(srcMemory0.GetData());
     const auto *src_roi = reinterpret_cast<const float *>(srcMemory1.GetData());
-    const auto *src_roi_idx = reinterpret_cast<const size_t *>(srcMemory2.GetData());
+    const auto *src_roi_idx = reinterpret_cast<const int *>(srcMemory2.GetData());
 
     float *dst = reinterpret_cast<float *>(dstMemory.GetData());
 
@@ -141,12 +139,11 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
     int C = static_cast<int>(srcMemory0.GetDims()[1]);
     int H = static_cast<int>(srcMemory0.GetDims()[2]);
     int W = static_cast<int>(srcMemory0.GetDims()[3]);
-    auto mode = opType;
 
     for (; real_rois < nominalRoiCount; real_rois++) {
 //        size_t roi_off = real_rois * src_roi_step;
-        const size_t *src_roi_idx_ptr = &src_roi_idx[real_rois];
-        size_t roi_batch_ind = static_cast<int>(src_roi_idx_ptr[0]);
+        const int *src_roi_idx_ptr = &src_roi_idx[real_rois];
+        auto roi_batch_ind = src_roi_idx_ptr[0];
         if (roi_batch_ind == -1) {
             break;
         }
@@ -155,14 +152,17 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
     int roi_off;
 
     for (int n = 0; n < real_rois; ++n) {
-        // TODO - check boundaries of batch index
-
-        roi_off = n * 4;  // if batch id contained in same input
+        roi_off = n * 4;
         const float* src_roi_ptr = &src_roi[roi_off];
-        const size_t* src_roi_idx_ptr = &src_roi_idx[n];
+        const int* src_roi_idx_ptr = &src_roi_idx[n];
 
-// TODO: remove to another input
-        size_t roi_batch_ind = src_roi_idx_ptr[0];
+        int roi_batch_ind = src_roi_idx_ptr[0];
+        if (roi_batch_ind < -1) {
+            THROW_IE_EXCEPTION << "Batch index cannot be less, than -1";
+        } else if (roi_batch_ind >= srcMemory0.GetDims()[0]) {
+            THROW_IE_EXCEPTION << "Demanded batch (id = "<< roi_batch_ind << ") doesn't exist";
+        }
+
         float x1 = src_roi_ptr[0] * spatial_scale;
         float y1 = src_roi_ptr[1] * spatial_scale;
         float x2 = src_roi_ptr[2] * spatial_scale;
@@ -186,7 +186,6 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
         point_vector.reserve(4 * num_samples_in_bin * pooled_h * pooled_w);
         weight_vector.reserve(4 * num_samples_in_bin * pooled_h * pooled_w);
 
-// iterate over bins
         for (int y_bin_ind = 0; y_bin_ind < pooled_h; ++y_bin_ind) {
             for (int x_bin_ind = 0; x_bin_ind < pooled_w; ++x_bin_ind) {
                 // run into bin
@@ -249,7 +248,6 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
             unsigned int sample_index = 0;
             for (int y_bin_ind = 0; y_bin_ind < pooled_h; ++y_bin_ind) {
                 for (int x_bin_ind = 0; x_bin_ind < pooled_w; ++x_bin_ind) {
-                    // run into bin
                     float pooled_value = 0;
                     for (unsigned int bin_sample_ind = 0;
                          bin_sample_ind < num_samples_in_bin;
@@ -268,22 +266,18 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
                                           point_vector[sample_index + 3].second;
                         float part4 = src_data[part4_index];
 
-
-                        // TODO: replace to enum
-                        switch (1) {
-                            case 1:
+                        switch (opType) {
+                            case ROIAlignOpType::Max:
                             {
                                 float sample_value = std::max(
                                         {weight_vector[sample_index] * part1,
                                          weight_vector[sample_index + 1] * part2,
                                          weight_vector[sample_index + 2] * part3,
                                          weight_vector[sample_index + 3] * part4});
-
-                                pooled_value = sample_value > pooled_value ? sample_value
-                                                                           : pooled_value;
+                                pooled_value = sample_value > pooled_value ? sample_value : pooled_value;
                                 break;
                             }
-                            case 2:
+                            case ROIAlignOpType::Avg:
                             default:
                             {
                                 float sample_value =
