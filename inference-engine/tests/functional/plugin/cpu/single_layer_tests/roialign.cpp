@@ -121,8 +121,8 @@ std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
     if (with_cpu_x86_avx512f()) {
 //        resCPUParams.push_back(CPUSpecificParams{{nChw16c, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512_FP32"});
 //        resCPUParams.push_back(CPUSpecificParams{{}, {}, {}, {}});
-//        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {"ref"}, "ref_FP32"});
-        resCPUParams.push_back(CPUSpecificParams{{nChw16c, nc, x}, {nchw}, {"ref"}, "ref_FP32"});
+        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {"ref"}, "ref_FP32"});
+        resCPUParams.push_back(CPUSpecificParams{{nChw16c, nc, x}, {nChw16c}, {"ref"}, "ref_FP32"});
 
 //        resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"jit_avx2"}, "jit_avx2_FP32"});
 //    } else if (with_cpu_x86_avx2()) {
