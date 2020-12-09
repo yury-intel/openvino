@@ -251,8 +251,7 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
                 }
             }
         }
-
-        for (int c = 0; c < C; ++c) {  // parallel for
+        parallel_for(C, [&](int c) {
             const int block_residual = c % block_size;
             const int block_idx = (c / block_size) * block_size;
             size_t bin_offset_input = (roi_batch_ind * C + block_idx) * H * W;
@@ -265,16 +264,16 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
                          bin_sample_ind < num_samples_in_bin;
                          bin_sample_ind++) {
                         size_t part1_index = bin_offset_input + point_vector[sample_index].first * block_offset_input +
-                                          point_vector[sample_index].second * block_size + block_residual;
+                                             point_vector[sample_index].second * block_size + block_residual;
                         float part1 = src_data[part1_index];
                         size_t part2_index = bin_offset_input + point_vector[sample_index + 1].first * block_offset_input +
-                                          point_vector[sample_index + 1].second * block_size + block_residual;
+                                             point_vector[sample_index + 1].second * block_size + block_residual;
                         float part2 = src_data[part2_index];
                         size_t part3_index = bin_offset_input + point_vector[sample_index + 2].first * block_offset_input +
-                                          point_vector[sample_index + 2].second * block_size + block_residual;
+                                             point_vector[sample_index + 2].second * block_size + block_residual;
                         float part3 = src_data[part3_index];
                         size_t part4_index = bin_offset_input + point_vector[sample_index + 3].first * block_offset_input +
-                                          point_vector[sample_index + 3].second * block_size + block_residual;
+                                             point_vector[sample_index + 3].second * block_size + block_residual;
                         float part4 = src_data[part4_index];
 
                         switch (opType) {
@@ -303,11 +302,11 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
                     }
                     // write pooled value
                     size_t dst_index = bin_offset_output + y_bin_ind * block_offset_output +
-                            x_bin_ind * block_size + block_residual;
+                                       x_bin_ind * block_size + block_residual;
                     dst[dst_index] = pooled_value;
                 }
             }
-        }
+        });
     }
 }
 
