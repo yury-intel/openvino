@@ -120,7 +120,10 @@ std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
     std::vector<CPUSpecificParams> resCPUParams;
     if (with_cpu_x86_avx512f()) {
 //        resCPUParams.push_back(CPUSpecificParams{{nChw16c, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512_FP32"});
-        resCPUParams.push_back(CPUSpecificParams{{}, {}, {}, {}});
+//        resCPUParams.push_back(CPUSpecificParams{{}, {}, {}, {}});
+//        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {"ref"}, "ref_FP32"});
+        resCPUParams.push_back(CPUSpecificParams{{nChw16c, nc, x}, {nchw}, {"ref"}, "ref_FP32"});
+
 //        resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"jit_avx2"}, "jit_avx2_FP32"});
 //    } else if (with_cpu_x86_avx2()) {
 //        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2_FP32"});
@@ -130,7 +133,7 @@ std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
 //        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42_FP32"});
 //        resCPUParams.push_back(CPUSpecificParams{{nhwc, x}, {nhwc}, {"jit_sse42"}, "jit_sse42_FP32"});
     } else {
-        resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"ref"}, "ref_FP32"});
+        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {"ref"}, "ref_FP32"});
     }
     return resCPUParams;
 }
@@ -147,7 +150,7 @@ const std::vector<float> spatialScaleVector = { 1.0f };
 
 const std::vector<int> poolingRatioVector = { 2 };
 
-const std::vector<std::string> noDeformableModeVector = {
+const std::vector<std::string> modeVector = {
         "avg",
         "max"
 };
@@ -164,20 +167,20 @@ const std::vector<std::vector<size_t>> roisIdxVector = {
         { 0 }
 };
 
-const auto roiAlignNonDeformableParams = ::testing::Combine(
+const auto roiAlignParams = ::testing::Combine(
         ::testing::ValuesIn(spatialBinXVector),       // bin's column count
         ::testing::ValuesIn(spatialBinYVector),       // bin's row count
         ::testing::ValuesIn(spatialScaleVector),      // scale for given region considering actual input size
         ::testing::ValuesIn(poolingRatioVector),      // pooling ratio for bin
         ::testing::ValuesIn(proposalsVector),         // coordinate vector: left_top_x, left_top_y, right_bottom_x, right_bottom_y
         ::testing::ValuesIn(roisIdxVector),           // batch id's vector
-        ::testing::ValuesIn(noDeformableModeVector),  // pooling mode
+        ::testing::ValuesIn(modeVector),  // pooling mode
         ::testing::ValuesIn(inputShapeVector)         // feature map shape
 );
 
 const auto bigCombine = ::testing::Combine(
         ::testing::Combine(
-                roiAlignNonDeformableParams,
+                roiAlignParams,
                 ::testing::ValuesIn(netPrecisions),
                 ::testing::Values(InferenceEngine::Precision::FP32),
                 ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
