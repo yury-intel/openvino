@@ -84,8 +84,8 @@ protected:
         ngraph::Shape coordsShape = { proposalVector.size() / 4, 4 };
         ngraph::Shape idxVectorShape = { roiIdxVector.size() };
 
-        ngraph::element::Type ntype = inPrc == InferenceEngine::Precision::FP32 ? ngraph::element::f32 : ngraph::element::bf16;
-        coords = std::make_shared<ngraph::opset1::Constant>(ntype, coordsShape, proposalVector.data());
+//        ngraph::element::Type ntype = inPrc == InferenceEngine::Precision::FP32 ? ngraph::element::f32 : ngraph::element::bf16;
+        coords = std::make_shared<ngraph::opset1::Constant>(ngraph::element::f32, coordsShape, proposalVector.data());
         roisIdx = std::make_shared<ngraph::opset1::Constant>(ngraph::element::i32, idxVectorShape, roiIdxVector.data());
 
         auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
@@ -94,11 +94,12 @@ protected:
         auto roialign = std::make_shared<ngraph::opset3::ROIAlign>(params[0], coords, roisIdx, pooled_h, pooled_w,
                                                                    samplingRatio, spatialScale, mode);
         roialign->get_rt_info() = getCPUInfo();
-        if (Precision::BF16 == netPrecision) {
-            selectedType = "unknown_BF16";
-        } else if (Precision::FP32 == netPrecision) {
-            selectedType = "unknown_FP32";
-        }
+        selectedType = std::string("unknown_") + inPrc.name();
+//        if (Precision::BF16 == netPrecision) {
+//            selectedType = "unknown_BF16";
+//        } else if (Precision::FP32 == netPrecision) {
+//            selectedType = "unknown_FP32";
+//        }
 
         threshold = 0.0f;
         const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(roialign)};
@@ -121,8 +122,8 @@ std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
     if (with_cpu_x86_avx512f()) {
 //        resCPUParams.push_back(CPUSpecificParams{{nChw16c, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512_FP32"});
 //        resCPUParams.push_back(CPUSpecificParams{{}, {}, {}, {}});
-        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {"ref"}, "ref_FP32"});
-        resCPUParams.push_back(CPUSpecificParams{{nChw16c, nc, x}, {nChw16c}, {"ref"}, "ref_FP32"});
+        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {}, {}});
+        resCPUParams.push_back(CPUSpecificParams{{nChw16c, nc, x}, {nChw16c}, {}, {}});
 
 //        resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"jit_avx2"}, "jit_avx2_FP32"});
 //    } else if (with_cpu_x86_avx2()) {
@@ -139,7 +140,8 @@ std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
 }
 
 const std::vector<InferenceEngine::Precision> netPrecisions = {
-        InferenceEngine::Precision::FP32
+//        InferenceEngine::Precision::FP32,
+        InferenceEngine::Precision::BF16
 };
 
 const std::vector<int> spatialBinXVector = { 2 };

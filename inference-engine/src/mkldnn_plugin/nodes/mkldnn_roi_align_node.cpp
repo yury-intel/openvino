@@ -11,6 +11,7 @@
 #include <math.h>
 #include <mkldnn_extension_utils.h>
 #include <mkldnn_types.h>
+#include <utils/bfloat16.hpp>
 #include "ie_parallel.hpp"
 
 using namespace MKLDNNPlugin;
@@ -114,14 +115,30 @@ void MKLDNNROIAlignNode::initSupportedPrimitiveDescriptors() {
     config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
     config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, memory::nChw16c);
     supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nChw16c});
-//    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), memory::f32, memory::nChw8c);
-//    config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
-//    config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
-//    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, memory::nChw8c);
-//    supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nChw8c});
+    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), memory::f32, memory::nChw8c);
+    config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
+    config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
+    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, memory::nChw8c);
+    supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nChw8c});
 }
 
 void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
+//    auto inputPrec = inputs[0]->getTensorDesc().getPrecision();
+//    auto outputPrec = outputs[0]->getTensorDesc().getPrecision();
+
+    auto input_prec = getParentEdgeAt(0)->getMemory().GetDescriptor().data.data_type;
+    auto output_prec = getChildEdgeAt(0)->getMemory().GetDescriptor().data.data_type;
+    if (input_prec == mkldnn_bf16 && output_prec == mkldnn_bf16) {
+        executeSpecified<bfloat16_t, bfloat16_t>(strm);
+    } else if (input_prec == mkldnn_f32 && output_prec == mkldnn_f32) {
+        executeSpecified<float, float>(strm);
+    } else {
+        THROW_IE_EXCEPTION <<"ROIALIGN DOESN'T SUPPORT DEMANDED PRECISIONS";
+    }
+}
+
+template <typename inputType, typename outputType>
+void MKLDNNROIAlignNode::executeSpecified(mkldnn::stream strm) {
     auto &srcMemory0 = getParentEdgeAt(0)->getMemory();
     auto &srcMemory1 = getParentEdgeAt(1)->getMemory();
     auto &srcMemory2 = getParentEdgeAt(2)->getMemory();
@@ -129,13 +146,13 @@ void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
     auto &dstMemory = getChildEdgeAt(0)->getMemory();
 
     auto block_size = srcMemory0.GetDescriptor().data.format == mkldnn_nchw ? 1 :
-            srcMemory0.GetDescriptor().data.format == mkldnn_nChw16c ? 16 : 8;
+                      srcMemory0.GetDescriptor().data.format == mkldnn_nChw16c ? 16 : 8;
 
-    const auto *src_data = reinterpret_cast<const float *>(srcMemory0.GetData());
+    const auto *src_data = reinterpret_cast<const inputType *>(srcMemory0.GetData());
     const auto *src_roi = reinterpret_cast<const float *>(srcMemory1.GetData());
     const auto *src_roi_idx = reinterpret_cast<const int *>(srcMemory2.GetData());
 
-    float *dst = reinterpret_cast<float *>(dstMemory.GetData());
+    auto *dst = reinterpret_cast<outputType *>(dstMemory.GetData());
 
     auto config = getSelectedPrimitiveDescriptor()->getConfig();
 
