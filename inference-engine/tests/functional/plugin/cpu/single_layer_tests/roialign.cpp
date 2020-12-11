@@ -37,12 +37,6 @@ typedef std::tuple<
 typedef std::tuple<
         ROIAlignSpecificParams,
         InferenceEngine::Precision,     // Net precision
-        InferenceEngine::Precision,     // Input precision
-        InferenceEngine::Precision,     // Output precision
-        InferenceEngine::Layout,        // Input layout
-        InferenceEngine::Layout,        // Output layout
-        InferenceEngine::SizeVector,    // Input shapes
-        InferenceEngine::SizeVector,    // Target shapes
         LayerTestsUtils::TargetDevice   // Device name
 > ROIALignLayerTestParams;
 
@@ -57,8 +51,16 @@ public:
         CPULayerTestsDefinitions::ROIALignLayerTestParams basicParamsSet;
         CPUSpecificParams cpuParams;
         std::tie(basicParamsSet, cpuParams) = obj.param;
+        std::string td;
+        Precision netPr;
+        ROIAlignSpecificParams roiPar;
+        std::tie(roiPar, netPr, td) = basicParamsSet;
+        std::tie(pooled_h, pooled_w, spatialScale, samplingRatio,
+                 proposalVector, roiIdxVector, mode, inputShape) = roiPar;
         std::ostringstream result;
         result << "ROIAlignTest_";
+        result << (netPr == Precision::FP32 ? "FP32" : "BF16") << "_";
+        result << mode << "_";
         result << std::to_string(obj.index);
         result << CPUTestsBase::getTestCaseName(cpuParams);
         return result.str();
@@ -75,7 +77,8 @@ protected:
         std::vector<size_t> inputShape_unused;
         std::vector<size_t> targetShape;
         auto netPrecision = InferenceEngine::Precision::UNSPECIFIED;
-        std::tie(roiAlignParams, netPrecision, inPrc, outPrc, inLayout, outLayout, inputShape_unused, targetShape, targetDevice) = basicParamsSet;
+        std::tie(roiAlignParams, netPrecision, targetDevice) = basicParamsSet;
+        inPrc = outPrc = netPrecision;
         std::tie(pooled_h, pooled_w, spatialScale, samplingRatio,
                  proposalVector, roiIdxVector, mode, inputShape) = roiAlignParams;
         std::shared_ptr<ngraph::opset1::Constant> coords = nullptr;
@@ -84,24 +87,16 @@ protected:
         ngraph::Shape coordsShape = { proposalVector.size() / 4, 4 };
         ngraph::Shape idxVectorShape = { roiIdxVector.size() };
 
-//        ngraph::element::Type ntype = inPrc == InferenceEngine::Precision::FP32 ? ngraph::element::f32 : ngraph::element::bf16;
         coords = std::make_shared<ngraph::opset1::Constant>(ngraph::element::f32, coordsShape, proposalVector.data());
         roisIdx = std::make_shared<ngraph::opset1::Constant>(ngraph::element::i32, idxVectorShape, roiIdxVector.data());
 
-        auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
-        auto params = ngraph::builder::makeParams(ngPrc, {inputShape});
+        auto params = ngraph::builder::makeParams(ngraph::element::f32, {inputShape});
 
         auto roialign = std::make_shared<ngraph::opset3::ROIAlign>(params[0], coords, roisIdx, pooled_h, pooled_w,
                                                                    samplingRatio, spatialScale, mode);
         roialign->get_rt_info() = getCPUInfo();
         selectedType = std::string("unknown_") + inPrc.name();
-//        if (Precision::BF16 == netPrecision) {
-//            selectedType = "unknown_BF16";
-//        } else if (Precision::FP32 == netPrecision) {
-//            selectedType = "unknown_FP32";
-//        }
-
-        threshold = 0.0f;
+        threshold = 0.001f;
         const ngraph::ResultVector results{std::make_shared<ngraph::opset3::Result>(roialign)};
         function = std::make_shared<ngraph::Function>(results, params, "ROIAlign");
     }
@@ -109,7 +104,6 @@ protected:
 
 TEST_P(ROIAlignLayerCPUTest, CompareWithRefs) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
-
     Run();
     CheckCPUImpl(executableNetwork, "ROIAlign");
 }
@@ -120,27 +114,19 @@ namespace {
 std::vector<CPUSpecificParams> filterCPUInfoForDevice() {
     std::vector<CPUSpecificParams> resCPUParams;
     if (with_cpu_x86_avx512f()) {
-//        resCPUParams.push_back(CPUSpecificParams{{nChw16c, x}, {nChw16c}, {"jit_avx512"}, "jit_avx512_FP32"});
-//        resCPUParams.push_back(CPUSpecificParams{{}, {}, {}, {}});
         resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {}, {}});
         resCPUParams.push_back(CPUSpecificParams{{nChw16c, nc, x}, {nChw16c}, {}, {}});
-
-//        resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"jit_avx2"}, "jit_avx2_FP32"});
-//    } else if (with_cpu_x86_avx2()) {
-//        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x}, {nChw8c}, {"jit_avx2"}, "jit_avx2_FP32"});
-//        resCPUParams.push_back(CPUSpecificParams{{nhwc, x}, {nhwc}, {"jit_avx2"}, "jit_avx2_FP32"});
-//        resCPUParams.push_back(CPUSpecificParams{{nchw, x}, {nchw}, {"jit_avx2"}, "jit_avx2_FP32"});
-//    } else if (with_cpu_x86_sse42()) {
-//        resCPUParams.push_back(CPUSpecificParams{{nChw8c, x}, {nChw8c}, {"jit_sse42"}, "jit_sse42_FP32"});
-//        resCPUParams.push_back(CPUSpecificParams{{nhwc, x}, {nhwc}, {"jit_sse42"}, "jit_sse42_FP32"});
+    } else if (with_cpu_x86_avx2() || with_cpu_x86_sse42()) {
+        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {}, {}});
+        resCPUParams.push_back(CPUSpecificParams{{nChw8c, nc, x}, {nChw8c}, {}, {}});
     } else {
-        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {"ref"}, "ref_FP32"});
+        resCPUParams.push_back(CPUSpecificParams{{nchw, nc, x}, {nchw}, {}, {}});
     }
     return resCPUParams;
 }
 
 const std::vector<InferenceEngine::Precision> netPrecisions = {
-//        InferenceEngine::Precision::FP32,
+        InferenceEngine::Precision::FP32,
         InferenceEngine::Precision::BF16
 };
 
@@ -150,7 +136,7 @@ const std::vector<int> spatialBinYVector = { 2 };
 
 const std::vector<float> spatialScaleVector = { 1.0f };
 
-const std::vector<int> poolingRatioVector = { 2 };
+const std::vector<int> poolingRatioVector = { 7 };
 
 const std::vector<std::string> modeVector = {
         "avg",
@@ -176,24 +162,17 @@ const auto roiAlignParams = ::testing::Combine(
         ::testing::ValuesIn(poolingRatioVector),      // pooling ratio for bin
         ::testing::ValuesIn(proposalsVector),         // coordinate vector: left_top_x, left_top_y, right_bottom_x, right_bottom_y
         ::testing::ValuesIn(roisIdxVector),           // batch id's vector
-        ::testing::ValuesIn(modeVector),  // pooling mode
+        ::testing::ValuesIn(modeVector),              // pooling mode
         ::testing::ValuesIn(inputShapeVector)         // feature map shape
 );
 
-const auto bigCombine = ::testing::Combine(
-        ::testing::Combine(
-                roiAlignParams,
-                ::testing::ValuesIn(netPrecisions),
-                ::testing::Values(InferenceEngine::Precision::FP32),
-                ::testing::Values(InferenceEngine::Precision::UNSPECIFIED),
-                ::testing::Values(InferenceEngine::Layout::ANY),
-                ::testing::Values(InferenceEngine::Layout::ANY),
-                ::testing::Values(std::vector<size_t>({1, 1, 40, 40})),
-                ::testing::Values(std::vector<size_t>({1, 1, 50, 60})),
-                ::testing::Values(CommonTestUtils::DEVICE_CPU)),
-        ::testing::ValuesIn(filterCPUInfoForDevice()));
-
 INSTANTIATE_TEST_CASE_P(smoke_ROIAlignLayoutTest, ROIAlignLayerCPUTest,
-                        bigCombine, ROIAlignLayerCPUTest::getTestCaseName);
+                        ::testing::Combine(
+                                ::testing::Combine(
+                                        roiAlignParams,
+                                        ::testing::ValuesIn(netPrecisions),
+                                        ::testing::Values(CommonTestUtils::DEVICE_CPU)),
+                                ::testing::ValuesIn(filterCPUInfoForDevice())),
+                                ROIAlignLayerCPUTest::getTestCaseName);
 } // namespace
 } // namespace CPULayerTestsDefinitions

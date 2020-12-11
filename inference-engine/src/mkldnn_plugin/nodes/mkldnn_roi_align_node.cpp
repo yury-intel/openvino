@@ -3,7 +3,6 @@
 //
 
 #include "mkldnn_roi_align_node.h"
-#include "desc_iterator.hpp"
 #include <legacy/ie_layers.h>
 #include <mkldnn.hpp>
 #include <string>
@@ -12,11 +11,13 @@
 #include <mkldnn_extension_utils.h>
 #include <mkldnn_types.h>
 #include <utils/bfloat16.hpp>
+#include <cpu_isa_traits.hpp>
 #include "ie_parallel.hpp"
 
 using namespace MKLDNNPlugin;
 using namespace InferenceEngine;
 using namespace mkldnn;
+using namespace mkldnn::impl::cpu;
 
 MKLDNNROIAlignNode::MKLDNNROIAlignNode(const InferenceEngine::CNNLayerPtr& layer, const mkldnn::engine& eng,
                                        MKLDNNWeightsSharing::Ptr &cache)
@@ -76,6 +77,17 @@ void MKLDNNROIAlignNode::initSupportedPrimitiveDescriptors() {
     if (!supportedPrimitiveDescriptors.empty())
         return;
 
+    Precision input_prec = getCnnLayer()->insData[0].lock()->getPrecision();
+    Precision output_prec = getCnnLayer()->outData[0]->getPrecision();
+
+    if (!mayiuse(avx512_core_bf16)) {
+        if (output_prec == Precision::BF16 || input_prec == Precision::BF16)
+            output_prec = input_prec = Precision::FP32;
+    }
+
+    auto inputDataType = MKLDNNExtensionUtils::IEPrecisionToDataType(input_prec);
+    auto outputDataType = MKLDNNExtensionUtils::IEPrecisionToDataType(output_prec);
+
     InferenceEngine::LayerConfig config;
     config.dynBatchSupport = false;
     config.inConfs.resize(3);
@@ -90,42 +102,24 @@ void MKLDNNROIAlignNode::initSupportedPrimitiveDescriptors() {
     config.outConfs[0].constant = false;
     config.outConfs[0].inPlace = -1;
 
-//    auto parentDims = getParentEdgeAt(0)->getDims();
-//    auto format = mayiuse(avx512_common) ? memory::format::nChw16c : memory::format::nChw8c;
-//    impl_desc_type impl_type;
-//    if (mayiuse(cpu::avx512_common)) {
-//        impl_type = impl_desc_type::jit_avx512;
-//    } else if (mayiuse(cpu::avx2)) {
-//        impl_type = impl_desc_type::jit_avx2;
-//    } else if (mayiuse(cpu::sse42)) {
-//        impl_type = impl_desc_type::jit_sse42;
-//    } else {
-//        impl_type = impl_desc_type::ref;
-//    }
-//    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), memory::f32, format);
-//    config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
-//    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, format);
-    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), memory::f32, memory::nchw);
+    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), inputDataType, memory::nchw);
     config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
     config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
-    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, memory::nchw);
+    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), outputDataType, memory::nchw);
     supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nchw});
-    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), memory::f32, memory::nChw16c);
+    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), inputDataType, memory::nChw16c);
     config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
     config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
-    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, memory::nChw16c);
+    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), outputDataType, memory::nChw16c);
     supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nChw16c});
-    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), memory::f32, memory::nChw8c);
+    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), inputDataType, memory::nChw8c);
     config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
     config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
-    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), memory::f32, memory::nChw8c);
+    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), outputDataType, memory::nChw8c);
     supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nChw8c});
 }
 
 void MKLDNNROIAlignNode::execute(mkldnn::stream strm) {
-//    auto inputPrec = inputs[0]->getTensorDesc().getPrecision();
-//    auto outputPrec = outputs[0]->getTensorDesc().getPrecision();
-
     auto input_prec = getParentEdgeAt(0)->getMemory().GetDescriptor().data.data_type;
     auto output_prec = getChildEdgeAt(0)->getMemory().GetDescriptor().data.data_type;
     if (input_prec == mkldnn_bf16 && output_prec == mkldnn_bf16) {
@@ -144,7 +138,7 @@ void MKLDNNROIAlignNode::executeSpecified(mkldnn::stream strm) {
     auto &srcMemory2 = getParentEdgeAt(2)->getMemory();
 
     auto &dstMemory = getChildEdgeAt(0)->getMemory();
-
+// TODO : for nhwc
     auto block_size = srcMemory0.GetDescriptor().data.format == mkldnn_nchw ? 1 :
                       srcMemory0.GetDescriptor().data.format == mkldnn_nChw16c ? 16 : 8;
 
@@ -317,7 +311,6 @@ void MKLDNNROIAlignNode::executeSpecified(mkldnn::stream strm) {
                         }
                         sample_index += 4;
                     }
-                    // write pooled value
                     size_t dst_index = bin_offset_output + y_bin_ind * block_offset_output +
                                        x_bin_ind * block_size + block_residual;
                     dst[dst_index] = pooled_value;
