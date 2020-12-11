@@ -107,6 +107,11 @@ void MKLDNNROIAlignNode::initSupportedPrimitiveDescriptors() {
     config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
     config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), outputDataType, memory::nchw);
     supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nchw});
+    config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), inputDataType, memory::nhwc);
+    config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
+    config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
+    config.outConfs[0].desc = MKLDNNMemoryDesc(getChildEdgeAt(0)->getDims(), outputDataType, memory::nhwc);
+    supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, memory::nhwc});
     config.inConfs[0].desc = MKLDNNMemoryDesc(getParentEdgeAt(0)->getDims(), inputDataType, memory::nChw16c);
     config.inConfs[1].desc = MKLDNNMemoryDesc(getParentEdgeAt(1)->getDims(), memory::f32, memory::nc);
     config.inConfs[2].desc = MKLDNNMemoryDesc(getParentEdgeAt(2)->getDims(), memory::u8, memory::x);
@@ -138,17 +143,27 @@ void MKLDNNROIAlignNode::executeSpecified(mkldnn::stream strm) {
     auto &srcMemory2 = getParentEdgeAt(2)->getMemory();
 
     auto &dstMemory = getChildEdgeAt(0)->getMemory();
-// TODO : for nhwc
-    auto block_size = srcMemory0.GetDescriptor().data.format == mkldnn_nchw ? 1 :
-                      srcMemory0.GetDescriptor().data.format == mkldnn_nChw16c ? 16 : 8;
+    int block_size;
+    auto selectedFmt = srcMemory0.GetDescriptor().data.format;
+    switch (selectedFmt) {
+        case mkldnn_nchw:
+        case mkldnn_nhwc:
+            block_size = 1;
+            break;
+        case mkldnn_nChw16c:
+            block_size = 16;
+            break;
+        case mkldnn_nChw8c:
+            block_size = 8;
+            break;
+        default:
+            THROW_IE_EXCEPTION << "UNSUPPORTED FORMAT FOR ROIALIGN";
+    }
 
     const auto *src_data = reinterpret_cast<const inputType *>(srcMemory0.GetData());
     const auto *src_roi = reinterpret_cast<const float *>(srcMemory1.GetData());
     const auto *src_roi_idx = reinterpret_cast<const int *>(srcMemory2.GetData());
-
     auto *dst = reinterpret_cast<outputType *>(dstMemory.GetData());
-
-    auto config = getSelectedPrimitiveDescriptor()->getConfig();
 
     auto nominal_roi_count = static_cast<int>(srcMemory1.GetDims()[0]);
     int real_rois = 0;
@@ -156,9 +171,23 @@ void MKLDNNROIAlignNode::executeSpecified(mkldnn::stream strm) {
     int H = static_cast<int>(srcMemory0.GetDims()[2]);
     int W = static_cast<int>(srcMemory0.GetDims()[3]);
 
-    const int block_offset_input = W * block_size;
-    const int block_offset_output = pooled_w * block_size;
     const int bin_count = pooled_h * pooled_w;
+
+    int h_input_coeff;
+    int w_input_coeff;
+    int h_output_coeff;
+    int w_output_coeff;
+    if (selectedFmt == mkldnn_nhwc) {
+        h_input_coeff = W * C;
+        w_input_coeff = C;
+        h_output_coeff = pooled_w * C;
+        w_output_coeff = C;
+    } else {  // nchw, nChw16c, nChw8c
+        h_input_coeff = W * block_size;
+        w_input_coeff = block_size;
+        h_output_coeff = pooled_w * block_size;
+        w_output_coeff = block_size;
+    }
 
     for (; real_rois < nominal_roi_count; real_rois++) {
         const int *src_roi_idx_ptr = &src_roi_idx[real_rois];
@@ -263,10 +292,19 @@ void MKLDNNROIAlignNode::executeSpecified(mkldnn::stream strm) {
             }
         }
         parallel_for(C, [&](int c) {
+            size_t bin_offset_input;
+            size_t bin_offset_output;
             const int block_residual = c % block_size;
             const int block_idx = (c / block_size) * block_size;
-            size_t bin_offset_input = (roi_batch_ind * C + block_idx) * H * W;
-            size_t bin_offset_output = (n * C + block_idx) * bin_count;
+            if (selectedFmt == mkldnn_nhwc) {
+                bin_offset_input = roi_batch_ind * C * H * W + c;
+                bin_offset_output = n * C * bin_count + c;
+
+            } else {  // nchw, nChw16c, nChw8c
+                bin_offset_input = (roi_batch_ind * C + block_idx) * H * W;
+                bin_offset_output = (n * C + block_idx) * bin_count;
+            }
+
             unsigned int sample_index = 0;
             for (int y_bin_ind = 0; y_bin_ind < pooled_h; ++y_bin_ind) {
                 for (int x_bin_ind = 0; x_bin_ind < pooled_w; ++x_bin_ind) {
@@ -274,17 +312,17 @@ void MKLDNNROIAlignNode::executeSpecified(mkldnn::stream strm) {
                     for (unsigned int bin_sample_ind = 0;
                          bin_sample_ind < num_samples_in_bin;
                          bin_sample_ind++) {
-                        size_t part1_index = bin_offset_input + point_vector[sample_index].first * block_offset_input +
-                                             point_vector[sample_index].second * block_size + block_residual;
+                        size_t part1_index = bin_offset_input + point_vector[sample_index].first * h_input_coeff +
+                                             point_vector[sample_index].second * w_input_coeff + block_residual;
                         float part1 = src_data[part1_index];
-                        size_t part2_index = bin_offset_input + point_vector[sample_index + 1].first * block_offset_input +
-                                             point_vector[sample_index + 1].second * block_size + block_residual;
+                        size_t part2_index = bin_offset_input + point_vector[sample_index + 1].first * h_input_coeff +
+                                             point_vector[sample_index + 1].second * w_input_coeff + block_residual;
                         float part2 = src_data[part2_index];
-                        size_t part3_index = bin_offset_input + point_vector[sample_index + 2].first * block_offset_input +
-                                             point_vector[sample_index + 2].second * block_size + block_residual;
+                        size_t part3_index = bin_offset_input + point_vector[sample_index + 2].first * h_input_coeff +
+                                             point_vector[sample_index + 2].second * w_input_coeff + block_residual;
                         float part3 = src_data[part3_index];
-                        size_t part4_index = bin_offset_input + point_vector[sample_index + 3].first * block_offset_input +
-                                             point_vector[sample_index + 3].second * block_size + block_residual;
+                        size_t part4_index = bin_offset_input + point_vector[sample_index + 3].first * h_input_coeff +
+                                             point_vector[sample_index + 3].second * w_input_coeff + block_residual;
                         float part4 = src_data[part4_index];
 
                         switch (opType) {
@@ -311,8 +349,8 @@ void MKLDNNROIAlignNode::executeSpecified(mkldnn::stream strm) {
                         }
                         sample_index += 4;
                     }
-                    size_t dst_index = bin_offset_output + y_bin_ind * block_offset_output +
-                                       x_bin_ind * block_size + block_residual;
+                    size_t dst_index = bin_offset_output + y_bin_ind * h_output_coeff +
+                                       x_bin_ind * w_output_coeff + block_residual;
                     dst[dst_index] = pooled_value;
                 }
             }
