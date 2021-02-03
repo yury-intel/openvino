@@ -1,147 +1,169 @@
 // Copyright (C) 2018-2020 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-//
 
-#include <vector>
-#include <memory>
-#include <string>
-#include <iterator>
-#include <samples/common.hpp>
 
 #include <inference_engine.hpp>
-#include <samples/ocv_common.hpp>
-#include <samples/classification_results.h>
+#include <opencv2/opencv.hpp>
+#include <fstream>
 
-using namespace InferenceEngine;
+void cvMat2ieChwFp32Blob(const cv::Mat& image, InferenceEngine::Blob::Ptr& blob) {
+    InferenceEngine::MemoryBlob::Ptr memoryBlob = InferenceEngine::as<InferenceEngine::MemoryBlob>(blob);
+    const auto blobData = memoryBlob->wmap().as<InferenceEngine::PrecisionTrait<InferenceEngine::Precision::FP32>::value_type*>();
 
-#if defined(ENABLE_UNICODE_PATH_SUPPORT) && defined(_WIN32)
-#define tcout std::wcout
-#define file_name_t std::wstring
-#define imread_t imreadW
-#define ClassificationResult_t ClassificationResultW
-#else
-#define tcout std::cout
-#define file_name_t std::string
-#define imread_t cv::imread
-#define ClassificationResult_t ClassificationResult
-#endif
+    const size_t channels = blob->getTensorDesc().getDims()[0];
+    const size_t height = blob->getTensorDesc().getDims()[1];
+    const size_t width = blob->getTensorDesc().getDims()[2];
+    const size_t numPixels = height * width;
 
-#if defined(ENABLE_UNICODE_PATH_SUPPORT) && defined(_WIN32)
-cv::Mat imreadW(std::wstring input_image_path) {
-    cv::Mat image;
-    std::ifstream input_image_stream;
-    input_image_stream.open(
-        input_image_path.c_str(),
-        std::iostream::binary | std::ios_base::ate | std::ios_base::in);
-    if (input_image_stream.is_open()) {
-        if (input_image_stream.good()) {
-            input_image_stream.seekg(0, std::ios::end);
-            std::size_t file_size = input_image_stream.tellg();
-            input_image_stream.seekg(0, std::ios::beg);
-            std::vector<char> buffer(0);
-            std::copy(
-                std::istreambuf_iterator<char>(input_image_stream),
-                std::istreambuf_iterator<char>(),
-                std::back_inserter(buffer));
-            image = cv::imdecode(cv::Mat(1, file_size, CV_8UC1, &buffer[0]), cv::IMREAD_COLOR);
-        } else {
-            tcout << "Input file '" << input_image_path << "' processing error" << std::endl;
+    std::cout << "cvMat2ieChwFp32Blob():" << std::endl;
+    std::cout << " tensorDescription: " << memoryBlob->getTensorDesc().getLayout() << " = [" << channels << ", " << height << ", " << width << "]" << std::endl;
+
+    cv::Mat imageResized(image);
+    cv::resize(image, imageResized, cv::Size(width, height));
+    imageResized.convertTo(imageResized, CV_32F, 1. / 255.);
+    cv::cvtColor(imageResized, imageResized, cv::COLOR_BGR2RGBA);
+
+    float* rowPtr;
+    for (size_t row = 0; row < height; ++row) {
+        rowPtr = imageResized.ptr<float>(row);
+
+        for (size_t col = 0; col < width; ++col) {
+//            my_file << rowPtr[col * 4 + 2] << "\n";
+//            my_file << rowPtr[col * 4 + 1] << "\n";
+//            my_file << rowPtr[col * 4 + 0] << "\n";
+            blobData[                row * width + col] = rowPtr[col * 4 + 2];
+            blobData[    numPixels + row * width + col] = rowPtr[col * 4 + 1];
+            blobData[2 * numPixels + row * width + col] = rowPtr[col * 4 + 0];
         }
-        input_image_stream.close();
-    } else {
-        tcout << "Unable to read input file '" << input_image_path << "'" << std::endl;
     }
+//    std::ofstream my_file("/localdisk/home/ygaydayc_l/models/custom_style/blob.txt");
+//    size_t size = blob->size();
+//    for (size_t i = 0; i < size; i++) {
+//        my_file << blobData[i] << "\n";
+//    }
+//    my_file.close();
+}
+
+cv::Mat ieNchwFp32cvMat(const InferenceEngine::Blob::Ptr blob) {
+    cv::Mat image;
+    cv::Mat imageComponents[3];
+
+    InferenceEngine::MemoryBlob::Ptr memoryBlob = InferenceEngine::as<InferenceEngine::MemoryBlob>(blob);
+    auto blobData = memoryBlob->rmap().as<InferenceEngine::PrecisionTrait<InferenceEngine::Precision::FP32>::value_type *>();
+
+    const InferenceEngine::TensorDesc& tensorOutput = memoryBlob->getTensorDesc();
+    const size_t height = tensorOutput.getDims()[2];
+    const size_t width = tensorOutput.getDims()[3];
+
+    imageComponents[0] = cv::Mat(static_cast<int>(height), static_cast<int>(width), CV_32F, reinterpret_cast<uint8_t*>(&blobData[0 * width * height]));
+    imageComponents[1] = cv::Mat(static_cast<int>(height), static_cast<int>(width), CV_32F, reinterpret_cast<uint8_t*>(&blobData[1 * width * height]));
+    imageComponents[2] = cv::Mat(static_cast<int>(height), static_cast<int>(width), CV_32F, reinterpret_cast<uint8_t*>(&blobData[2 * width * height]));
+
+    cv::merge(imageComponents, 3, image);
+    cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+    image.convertTo(image, CV_8U, 255.);
+
     return image;
 }
 
-std::string simpleConvert(const std::wstring & wstr) {
-    std::string str;
-    for (auto && wc : wstr)
-        str += static_cast<char>(wc);
-    return str;
-}
+int main(int argc, char* argv[]) {
+    const std::string device("CPU");
+    const std::string path("/localdisk/home/ygaydayc_l/models/custom_style/");
+    const std::string modelFilename("customStyleTransfer.onnx");
+    const std::string styleFilename("style.jpg");
+//    const std::vector<std::string> imagesFilenames({"dresden.jpg", "group.jpg", "ship.jpg"});
+    const std::vector<std::string> imagesFilenames({ "group.jpg", "ship.jpg"});
+    std::cout << "\nship with group + print scatters \n";
 
-int wmain(int argc, wchar_t *argv[]) {
-#else
+//    const std::vector<std::string> imagesFilenames({"ship.jpg"});
+    const std::string inputPortImage("tensor.1");
+    const std::string inputPortStyle("tensor");
+    const std::string outputPort("935");
 
-int main(int argc, char *argv[]) {
-#endif
-    try {
-        // ------------------------------ Parsing and validation of input args ---------------------------------
-        if (argc != 4) {
-            tcout << "Usage : " << argv[0] << " <path_to_model> <path_to_image> <device_name>" << std::endl;
-            return EXIT_FAILURE;
-        }
+    // ========== 1. Create inference engine core ==========
+    std::cout << "========== 1. Create inference engine core ==========" << std::endl;
 
-        const file_name_t input_model{argv[1]};
-        const file_name_t input_image_path{argv[2]};
-#if defined(ENABLE_UNICODE_PATH_SUPPORT) && defined(_WIN32)
-        const std::string device_name = simpleConvert(argv[3]);
-#else
-        const std::string device_name{argv[3]};
-#endif
-        // -----------------------------------------------------------------------------------------------------
+    InferenceEngine::Core core;
 
-        // --------------------------- 1. Load inference engine instance -------------------------------------
-        Core ie;
-        // -----------------------------------------------------------------------------------------------------
+    // ========== 2. Read model ==========
+    std::cout << "========== 2. Read model ==========" << std::endl;
 
-        // 2. Read a model in OpenVINO Intermediate Representation (.xml and .bin files) or ONNX (.onnx file) format
-        CNNNetwork network = ie.ReadNetwork(input_model);
-        if (network.getOutputsInfo().size() != 1) throw std::logic_error("Sample supports topologies with 1 output only");
-        if (network.getInputsInfo().size() != 1) throw std::logic_error("Sample supports topologies with 1 input only");
-        // -----------------------------------------------------------------------------------------------------
+    InferenceEngine::CNNNetwork network = core.ReadNetwork(path + modelFilename);
 
-        // --------------------------- 3. Configure input & output ---------------------------------------------
-        // --------------------------- Prepare input blobs -----------------------------------------------------
-        InputInfo::Ptr input_info = network.getInputsInfo().begin()->second;
-        std::string input_name = network.getInputsInfo().begin()->first;
+    // ========== 3. Print inputs and outputs ==========
+    std::cout << "========== 3. Print inputs and outputs ==========" << std::endl;
 
-        /* Mark input as resizable by setting of a resize algorithm.
-         * In this case we will be able to set an input blob of any shape to an infer request.
-         * Resize and layout conversions are executed automatically during inference */
-        input_info->getPreProcess().setResizeAlgorithm(RESIZE_BILINEAR);
-        input_info->setLayout(Layout::NHWC);
-        input_info->setPrecision(Precision::U8);
+    std::cout << "Network input/output:" << std::endl;
+    std::cout << " Name: " << network.getName() << std::endl;
 
-        // --------------------------- Prepare output blobs ----------------------------------------------------
-        DataPtr output_info = network.getOutputsInfo().begin()->second;
-        std::string output_name = network.getOutputsInfo().begin()->first;
+    InferenceEngine::InputsDataMap inputsDataMap = network.getInputsInfo();
+    InferenceEngine::OutputsDataMap outputsDataMap = network.getOutputsInfo();
 
-        output_info->setPrecision(Precision::FP32);
-        // -----------------------------------------------------------------------------------------------------
+    std::cout << " Inputs info(s): " << std::endl;
+    for (std::pair<std::string, InferenceEngine::InputInfo::Ptr> inputData : inputsDataMap) {
+        std::string inputName = inputData.first;
+        InferenceEngine::InputInfo::Ptr inputInfo = inputData.second;
 
-        // --------------------------- 4. Loading model to the device ------------------------------------------
-        ExecutableNetwork executable_network = ie.LoadNetwork(network, device_name);
-        // -----------------------------------------------------------------------------------------------------
-
-        // --------------------------- 5. Create infer request -------------------------------------------------
-        InferRequest infer_request = executable_network.CreateInferRequest();
-        // -----------------------------------------------------------------------------------------------------
-
-        // --------------------------- 6. Prepare input --------------------------------------------------------
-        /* Read input image to a blob and set it to an infer request without resize and layout conversions. */
-        cv::Mat image = imread_t(input_image_path);
-        Blob::Ptr imgBlob = wrapMat2Blob(image);  // just wrap Mat data by Blob::Ptr without allocating of new memory
-        infer_request.SetBlob(input_name, imgBlob);  // infer_request accepts input blob of any size
-        // -----------------------------------------------------------------------------------------------------
-
-        // --------------------------- 7. Do inference --------------------------------------------------------
-        /* Running the request synchronously */
-        infer_request.Infer();
-        // -----------------------------------------------------------------------------------------------------
-
-        // --------------------------- 8. Process output ------------------------------------------------------
-        Blob::Ptr output = infer_request.GetBlob(output_name);
-        // Print classification results
-        ClassificationResult_t classificationResult(output, {input_image_path});
-        classificationResult.print();
-        // -----------------------------------------------------------------------------------------------------
-    } catch (const std::exception & ex) {
-        std::cerr << ex.what() << std::endl;
-        return EXIT_FAILURE;
+        std::cout << "  " << inputName << ", layout = " << inputInfo->getLayout() << ", precision = " << inputInfo->getPrecision() << std::endl;
     }
-    std::cout << "This sample is an API example, for any performance measurements "
-                 "please use the dedicated benchmark_app tool" << std::endl;
-    return EXIT_SUCCESS;
+
+    std::cout << " Outputs info(s):" << std::endl;
+    for (std::pair<std::string, InferenceEngine::DataPtr> outputData : outputsDataMap) {
+        std::string outputName = outputData.first;
+        InferenceEngine::DataPtr outputInfo = outputData.second;
+
+        std::cout << "  " << outputName << ", layout = " << outputInfo->getLayout() << ", precision = " << outputInfo->getPrecision() << std::endl;
+    }
+
+    // ========== 4. Load model ==========
+    std::cout << "========== 4. Load model ==========" << std::endl;
+
+    InferenceEngine::ExecutableNetwork executableNetwork = core.LoadNetwork(network, device);
+
+    // ========== 5. Create infer request ==========
+    std::cout << "========== 5. Create infer request ==========" << std::endl;
+
+    InferenceEngine::InferRequest::Ptr inferRequestPtr = executableNetwork.CreateInferRequestPtr();
+
+    // ========== 6. Prepare inputs ==========
+    std::cout << "========== 6. Prepare inputs ==========" << std::endl;
+
+    InferenceEngine::Blob::Ptr styleBlob, imageBlob0, imageBlob1;
+    InferenceEngine::Blob::Ptr imageBlob = inferRequestPtr->GetBlob(inputPortImage);
+
+    cv::Mat style, image;
+
+    styleBlob = inferRequestPtr->GetBlob(inputPortStyle);
+
+    style = cv::imread(path + styleFilename);
+    cvMat2ieChwFp32Blob(style, styleBlob);
+
+    for (const std::string& imageFileName : imagesFilenames) {
+        image = cv::imread(path + imageFileName);
+        cvMat2ieChwFp32Blob(image, imageBlob);
+
+//        // ========== 6.5 Copy input ===========
+//
+//        cv::Mat output_special = ieNchwFp32cvMat(imageBlob);
+//
+//        cv::imwrite(path + "_!!_" + imageFileName, output_special);
+
+        // ========== 7. Do inference ==========
+        std::cout << "========== 7. Do inference ==========" << std::endl;
+
+        inferRequestPtr->Infer();
+
+        // ========== 8. Handle output ==========
+        std::cout << "========== 8. Handle output ==========" << std::endl;
+
+        InferenceEngine::Blob::Ptr outputBlob;
+
+        outputBlob = inferRequestPtr->GetBlob(outputPort);
+
+        cv::Mat output = ieNchwFp32cvMat(outputBlob);
+
+        cv::imwrite(path + "_" + imageFileName, output);
+    }
+
+    return 0;
 }
