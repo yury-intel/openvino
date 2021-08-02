@@ -972,6 +972,7 @@ void MKLDNNDeformableConvolutionNode::initSupportedPrimitiveDescriptors() {
     || ((getChildEdgeAt(0)->getDims()[1] / group) % simd_w != 0))) {
         enforceRef = true;
     }
+    enforceRef = true;
 
     size_t inputsNumber = getOriginalInputsNumber();
     InferenceEngine::LayerConfig config;
@@ -1175,7 +1176,16 @@ void MKLDNNDeformableConvolutionNode::executeReference(const float* src, const f
 
                     const float h_im = h_in + map_h; // absolute pixel index with offset
                     const float w_im = w_in + map_w; // absolute pixel index with offset
-                    if (h_im >= 0 && w_im >= 0 && h_im < IH && w_im < IW) {
+                    bool skip_compute;
+                    if (with_bilinear_pad) {
+                        skip_compute = !(static_cast<int>(w_im) > -1 &&
+                                static_cast<int>(w_im) < IW &&
+                                static_cast<int>(h_im) > -1 &&
+                                static_cast<int>(w_im) < IH);
+                    } else {
+                        skip_compute = !(h_im >= 0 && w_im >= 0 && h_im < IH && w_im < IW);
+                    }
+                    if (!skip_compute) {
                         const int cur_height = IH - h_in;
                         const int cur_width = IW - w_in;
                         int h_low = std::max(static_cast<int>(floorf(map_h)), 0);
