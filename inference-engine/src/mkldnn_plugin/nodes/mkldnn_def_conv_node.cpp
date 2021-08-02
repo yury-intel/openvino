@@ -359,16 +359,33 @@ private:
                         cvtsi2ss(xmm_ih_im, reg_tmp_32);
                         addss(xmm_ih_im, xmm_map_h);
 
-                        movss(xmm_tmp, xmm_ih_im);
-                        cmpss(xmm_tmp, table_val(0), 1);
-                        movq(reg_tmp_64, xmm_tmp);
-                        cmp(reg_tmp_32, 0);
-                        jne(init_with_zeros, T_NEAR);
+                        if (jcp_.with_bi_pad) {
+                            movss(xmm_tmp, xmm_ih_im);
+                            cvtps2dq(xmm_tmp, xmm_tmp);
+                            cmpss(xmm_tmp, table_val(1), 1);
+                            movq(reg_tmp_64, xmm_tmp);
+                            cmp(reg_tmp_32, 0);
+                            je(init_with_zeros, T_NEAR);
 
-                        cmpss(xmm_ih_im, table_val(1), 1);
-                        movq(reg_tmp_64, xmm_ih_im);
-                        cmp(reg_tmp_32, 0);
-                        je(init_with_zeros, T_NEAR);
+                            movss(xmm_tmp, xmm_ih_im);
+                            cvtps2dq(xmm_tmp, xmm_tmp);
+//                            paddd(xmm_tmp, table_val(5));
+                            cmpss(xmm_tmp, table_val(6), 0x0e);
+                            movq(reg_tmp_64, xmm_tmp);
+                            cmp(reg_tmp_32, 0);
+                            jne(init_with_zeros, T_NEAR);
+                        } else {
+                            movss(xmm_tmp, xmm_ih_im);
+                            cmpss(xmm_tmp, table_val(0), 1);
+                            movq(reg_tmp_64, xmm_tmp);
+                            cmp(reg_tmp_32, 0);
+                            jne(init_with_zeros, T_NEAR);
+
+                            cmpss(xmm_ih_im, table_val(1), 1);
+                            movq(reg_tmp_64, xmm_ih_im);
+                            cmp(reg_tmp_32, 0);
+                            je(init_with_zeros, T_NEAR);
+                        }
 
 
                         size_t def_off_w = ((2 * (kh * jcp_.kw + kw) + 1) * jcp_.oh * jcp_.ow) + ow;
@@ -387,16 +404,33 @@ private:
                         cvtsi2ss(xmm_iw_im, reg_tmp_32);
                         addss(xmm_iw_im, xmm_map_w);
 
-                        movss(xmm_tmp, xmm_iw_im);
-                        cmpss(xmm_tmp, table_val(0), 1);
-                        movq(reg_tmp_64, xmm_tmp);
-                        cmp(reg_tmp_32, 0);
-                        jne(init_with_zeros, T_NEAR);
+                        if (jcp_.with_bi_pad) {
+                            movss(xmm_tmp, xmm_iw_im);
+                            cvtps2dq(xmm_tmp, xmm_tmp);
+                            cmpss(xmm_tmp, table_val(2), 1);
+                            movq(reg_tmp_64, xmm_tmp);
+                            cmp(reg_tmp_32, 0);
+                            je(init_with_zeros, T_NEAR);
 
-                        cmpss(xmm_iw_im, table_val(2), 1);
-                        movq(reg_tmp_64, xmm_iw_im);
-                        cmp(reg_tmp_32, 0);
-                        je(init_with_zeros, T_NEAR);
+                            movss(xmm_tmp, xmm_iw_im);
+                            cvtps2dq(xmm_tmp, xmm_tmp);
+//                            paddd(xmm_tmp, table_val(5));
+                            cmpss(xmm_tmp, table_val(6), 0x0e);
+                            movq(reg_tmp_64, xmm_tmp);
+                            cmp(reg_tmp_32, 0);
+                            jne(init_with_zeros, T_NEAR);
+                        } else {
+                            movss(xmm_tmp, xmm_iw_im);
+                            cmpss(xmm_tmp, table_val(0), 1);
+                            movq(reg_tmp_64, xmm_tmp);
+                            cmp(reg_tmp_32, 0);
+                            jne(init_with_zeros, T_NEAR);
+
+                            cmpss(xmm_iw_im, table_val(2), 1);
+                            movq(reg_tmp_64, xmm_iw_im);
+                            cmp(reg_tmp_32, 0);
+                            je(init_with_zeros, T_NEAR);
+                        }
 
                         // interpolation calculation
 
@@ -967,12 +1001,12 @@ void MKLDNNDeformableConvolutionNode::initSupportedPrimitiveDescriptors() {
     if (!supportedPrimitiveDescriptors.empty())
         return;
 
-    const int simd_w = mayiuse(cpu::x64::avx512_common) ? 16 : 8;
-    if (group != 1 && (((getParentEdgeAt(0)->getDims()[1] / group) % simd_w != 0)
-    || ((getChildEdgeAt(0)->getDims()[1] / group) % simd_w != 0))) {
-        enforceRef = true;
-    }
-    enforceRef = true;
+//    const int simd_w = mayiuse(cpu::x64::avx512_common) ? 16 : 8;
+//    if (group != 1 && (((getParentEdgeAt(0)->getDims()[1] / group) % simd_w != 0)
+//    || ((getChildEdgeAt(0)->getDims()[1] / group) % simd_w != 0))) {
+//        enforceRef = true;
+//    }
+    enforceRef = false;
 
     size_t inputsNumber = getOriginalInputsNumber();
     InferenceEngine::LayerConfig config;
