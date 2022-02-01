@@ -438,7 +438,7 @@ void JitConverter<T[N]>::generate() {
 
     width >>= reg_capacity_log;
 
-    foreach(0, width, [&](const Reg64 & idx) {
+    foreach(0, width, [&](const variable<size_t> & idx) {
         auto yuv = load_yuv(src_y, src_uv);
 
         // Aliases
