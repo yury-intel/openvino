@@ -420,21 +420,23 @@ void console::print_vec(const char * name, const int8_t *vec, size_t size) {
 }
 
 void console::preamble() {
-    const std::unordered_set<int> free_x64regs(_kernel.free_x64regs().begin(),
-                                               _kernel.free_x64regs().end());
+    // const std::unordered_set<int> free_x64regs(_kernel.free_x64regs().begin(),
+    //                                            _kernel.free_x64regs().end());
     for (size_t i = 0; i < x64regs().size(); ++i) {
         const auto & reg = x64regs()[i].get();
-        if (!free_x64regs.count(reg.getIdx())
-            && isRegAllocable(reg.getIdx()))
+        // if (!free_x64regs.count(reg.getIdx())
+        //     && isRegAllocable(reg.getIdx()))
+        if (isRegAllocable(reg.getIdx()))
             _kernel.push(reg);
     }
 
     const cpu_isa_t isa = get_current_isa();
-    const std::unordered_set<int> free_rmmregs(_kernel.free_rmmregs().begin(),
-                                               _kernel.free_rmmregs().end());
+    // const std::unordered_set<int> free_rmmregs(_kernel.free_rmmregs().begin(),
+    //                                            _kernel.free_rmmregs().end());
     for (size_t i = 0; i < xmmregs().size(); ++i) {
         const auto & reg = xmmregs()[i].get();
-        if (!free_rmmregs.count(reg.getIdx())) {
+        // if (!free_rmmregs.count(reg.getIdx())) {
+        if (true) {
             switch (isa) {
                 case cpu_isa_t::avx512_common:
                     _kernel.uni_push(zmmregs()[i].get());
@@ -452,12 +454,13 @@ void console::preamble() {
 
 void console::postamble() {
     const cpu_isa_t isa = get_current_isa();
-    const std::unordered_set<int> free_rmmregs(_kernel.free_rmmregs().begin(),
-                                               _kernel.free_rmmregs().end());
+    // const std::unordered_set<int> free_rmmregs(_kernel.free_rmmregs().begin(),
+    //                                            _kernel.free_rmmregs().end());
     for (size_t i = 0; i < xmmregs().size(); ++i) {
         const size_t idx = xmmregs().size() - i - 1;
         const auto & reg = xmmregs()[idx].get();
-        if (!free_rmmregs.count(reg.getIdx())) {
+        if (true) {
+        // if (!free_rmmregs.count(reg.getIdx())) {
             switch (isa) {
                 case cpu_isa_t::avx512_common:
                     _kernel.uni_pop(zmmregs()[idx].get());
@@ -472,12 +475,13 @@ void console::postamble() {
         }
     }
 
-    const std::unordered_set<int> free_x64regs(_kernel.free_x64regs().begin(),
-                                               _kernel.free_x64regs().end());
+    // const std::unordered_set<int> free_x64regs(_kernel.free_x64regs().begin(),
+    //                                            _kernel.free_x64regs().end());
     for (size_t i = 0; i < x64regs().size(); ++i) {
         const auto & reg = x64regs()[x64regs().size() - i - 1].get();
-        if (!free_x64regs.count(reg.getIdx())
-            && isRegAllocable(reg.getIdx()))
+        // if (!free_x64regs.count(reg.getIdx())
+        //     && isRegAllocable(reg.getIdx()))
+        if (isRegAllocable(reg.getIdx()))
             _kernel.pop(reg);
     }
 }

@@ -215,11 +215,11 @@ const std::vector<InferenceEngine::Precision> netPrecisions = {
 
 const auto defConvSpecificParams_Smoke = ::testing::Combine(
     ::testing::ValuesIn(std::vector<bool> {
-        true,
+        // true,
         false
     }),  // with_bilinear_interpolation_pad
     ::testing::ValuesIn(std::vector<bool> {
-        true,
+        // true,
         false
     }),  // with_modulation
     ::testing::ValuesIn(std::vector<OffsetType> {
@@ -247,7 +247,7 @@ const auto defConvSpecificParams = ::testing::Combine(
 
 std::vector<ngraph::op::PadType> padTypes = {
     ngraph::op::PadType::EXPLICIT,
-    ngraph::op::PadType::VALID
+    // ngraph::op::PadType::VALID
 };
 std::vector<std::vector<size_t>> getCartProduct(const std::vector<std::vector<size_t>> &v) {
     int outSize = 1;
@@ -358,18 +358,18 @@ const std::vector<std::vector<InputShape>> dynShapeChainRef = {
             {{6, 3, 2, 2}, {{6, 3, 2, 2}, {6, 3, 2, 2}, {6, 3, 2, 2}}},     // input 2
             {{-1, -1, -1, -1}, {{1, 4, 2, 1}, {1, 4, 3, 2}, {1, 4, 4, 3}}}   // input 3
         },
-        {
-            {{{1, 5}, 6, {1, 10}, {1, 8}}, {{2, 6, 3, 2}, {1, 6, 4, 3}, {3, 6, 5, 4}}},
-            {{{1, 3}, 8, {1, 10}, {1, 8}}, {{2, 8, 2, 1}, {1, 8, 3, 2}, {3, 8, 4, 3}}},
-            {{6, 3, 2, 2}, {{6, 3, 2, 2}, {6, 3, 2, 2}, {6, 3, 2, 2}}},
-            {{{1, 3}, 4, {1, 10}, {1, 8}}, {{2, 4, 2, 1}, {1, 4, 3, 2}, {3, 4, 4, 3}}}
-        },
-        {
-            {{{1, 5}, {1, 6}, {1, 10}, {1, 8}}, {{2, 6, 3, 2}, {1, 6, 4, 3}, {3, 6, 5, 4}}},
-            {{{1, 3}, {1, 8}, {1, 10}, {1, 8}}, {{2, 8, 2, 1}, {1, 8, 3, 2}, {3, 8, 4, 3}}},
-            {{6, 3, 2, 2}, {{6, 3, 2, 2}, {6, 3, 2, 2}, {6, 3, 2, 2}}},
-            {{{1, 3}, {1, 5}, {1, 10}, {1, 8}}, {{2, 4, 2, 1}, {1, 4, 3, 2}, {3, 4, 4, 3}}}
-        },
+        // {
+        //     {{{1, 5}, 6, {1, 10}, {1, 8}}, {{2, 6, 3, 2}, {1, 6, 4, 3}, {3, 6, 5, 4}}},
+        //     {{{1, 3}, 8, {1, 10}, {1, 8}}, {{2, 8, 2, 1}, {1, 8, 3, 2}, {3, 8, 4, 3}}},
+        //     {{6, 3, 2, 2}, {{6, 3, 2, 2}, {6, 3, 2, 2}, {6, 3, 2, 2}}},
+        //     {{{1, 3}, 4, {1, 10}, {1, 8}}, {{2, 4, 2, 1}, {1, 4, 3, 2}, {3, 4, 4, 3}}}
+        // },
+        // {
+        //     {{{1, 5}, {1, 6}, {1, 10}, {1, 8}}, {{2, 6, 3, 2}, {1, 6, 4, 3}, {3, 6, 5, 4}}},
+        //     {{{1, 3}, {1, 8}, {1, 10}, {1, 8}}, {{2, 8, 2, 1}, {1, 8, 3, 2}, {3, 8, 4, 3}}},
+        //     {{6, 3, 2, 2}, {{6, 3, 2, 2}, {6, 3, 2, 2}, {6, 3, 2, 2}}},
+        //     {{{1, 3}, {1, 5}, {1, 10}, {1, 8}}, {{2, 4, 2, 1}, {1, 4, 3, 2}, {3, 4, 4, 3}}}
+        // },
 };
 const std::vector<std::vector<InputShape>> dynShapeChainJIT = {
         {
@@ -380,18 +380,18 @@ const std::vector<std::vector<InputShape>> dynShapeChainJIT = {
             {{16, 16, 2, 2}, {{16, 16, 2, 2}, {16, 16, 2, 2}, {16, 16, 2, 2}}},     // input 2
             {{-1, 4, -1, -1}, {{1, 4, 2, 1}, {1, 4, 3, 2}, {1, 4, 4, 3}}}   // input 3
         },
-        {
-            {{{1, 5}, 16, {1, 10}, {1, 8}}, {{1, 16, 3, 2}, {1, 16, 4, 3}, {1, 16, 5, 4}}},  // input 0
-            {{{1, 5}, 8, {1, 10}, {1, 8}}, {{1, 8, 2, 1}, {1, 8, 3, 2}, {1, 8, 4, 3}}},  // input 1
-            {{16, 16, 2, 2}, {{16, 16, 2, 2}, {16, 16, 2, 2}, {16, 16, 2, 2}}},     // input 2
-            {{{1, 5}, 4, {1, 10}, {1, 8}}, {{1, 4, 2, 1}, {1, 4, 3, 2}, {1, 4, 4, 3}}}   // input 3
-        },
-        {
-            {{{1, 5}, {1, 16}, {1, 10}, {1, 8}}, {{1, 16, 3, 2}, {1, 16, 4, 3}, {1, 16, 5, 4}}},  // input 0
-            {{{1, 5}, {1, 8}, {1, 10}, {1, 8}}, {{1, 8, 2, 1}, {1, 8, 3, 2}, {1, 8, 4, 3}}},  // input 1
-            {{16, 16, 2, 2}, {{16, 16, 2, 2}, {16, 16, 2, 2}, {16, 16, 2, 2}}},     // input 2
-            {{{1, 5}, {1, 5}, {1, 10}, {1, 8}}, {{1, 4, 2, 1}, {1, 4, 3, 2}, {1, 4, 4, 3}}}   // input 3
-        },
+        // {
+        //     {{{1, 5}, 16, {1, 10}, {1, 8}}, {{1, 16, 3, 2}, {1, 16, 4, 3}, {1, 16, 5, 4}}},  // input 0
+        //     {{{1, 5}, 8, {1, 10}, {1, 8}}, {{1, 8, 2, 1}, {1, 8, 3, 2}, {1, 8, 4, 3}}},  // input 1
+        //     {{16, 16, 2, 2}, {{16, 16, 2, 2}, {16, 16, 2, 2}, {16, 16, 2, 2}}},     // input 2
+        //     {{{1, 5}, 4, {1, 10}, {1, 8}}, {{1, 4, 2, 1}, {1, 4, 3, 2}, {1, 4, 4, 3}}}   // input 3
+        // },
+        // {
+        //     {{{1, 5}, {1, 16}, {1, 10}, {1, 8}}, {{1, 16, 3, 2}, {1, 16, 4, 3}, {1, 16, 5, 4}}},  // input 0
+        //     {{{1, 5}, {1, 8}, {1, 10}, {1, 8}}, {{1, 8, 2, 1}, {1, 8, 3, 2}, {1, 8, 4, 3}}},  // input 1
+        //     {{16, 16, 2, 2}, {{16, 16, 2, 2}, {16, 16, 2, 2}, {16, 16, 2, 2}}},     // input 2
+        //     {{{1, 5}, {1, 5}, {1, 10}, {1, 8}}, {{1, 4, 2, 1}, {1, 4, 3, 2}, {1, 4, 4, 3}}}   // input 3
+        // },
 };
 
 // autopad params
@@ -586,7 +586,7 @@ INSTANTIATE_TEST_SUITE_P(DefConvLayoutTest3, DefConvLayerCPUTest, params3, DefCo
 INSTANTIATE_TEST_SUITE_P(DefConvLayoutTest4, DefConvLayerCPUTest, params4, DefConvLayerCPUTest::getTestCaseName);
 INSTANTIATE_TEST_SUITE_P(DefConvLayoutTest5, DefConvLayerCPUTest, params5, DefConvLayerCPUTest::getTestCaseName);
 INSTANTIATE_TEST_SUITE_P(DefConvLayoutTest6, DefConvLayerCPUTest, params6, DefConvLayerCPUTest::getTestCaseName);
-INSTANTIATE_TEST_SUITE_P(DefConvLayoutTest7, DefConvLayerCPUTest, params7, DefConvLayerCPUTest::getTestCaseName);
+// INSTANTIATE_TEST_SUITE_P(DefConvLayoutTest7, DefConvLayerCPUTest, params7, DefConvLayerCPUTest::getTestCaseName);
 INSTANTIATE_TEST_SUITE_P(DefConvLayoutTest8, DefConvLayerCPUTest, params8, DefConvLayerCPUTest::getTestCaseName);
 INSTANTIATE_TEST_SUITE_P(DefConvLayoutTest9, DefConvLayerCPUTest, params9, DefConvLayerCPUTest::getTestCaseName);
 } // namespace

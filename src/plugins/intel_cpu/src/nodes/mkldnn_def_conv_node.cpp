@@ -11,6 +11,7 @@
 #include <cpu/x64/jit_generator.hpp>
 #include "ie_parallel.hpp"
 #include "memory_desc/dnnl_blocked_memory_desc.h"
+#include "utils/jit_kernel.hpp"
 
 using namespace mkldnn;
 using namespace MKLDNNPlugin;
@@ -24,12 +25,12 @@ using namespace Xbyak;
 #define GET_OFF(field) offsetof(jit_def_conv_call_args, field)
 
 template <cpu_isa_t isa>
-struct jit_uni_def_conv_kernel_f32 : public jit_uni_def_conv_kernel, public jit_generator {
+struct jit_uni_def_conv_kernel_f32 : public jit_uni_def_conv_kernel, public jit_kernel {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_def_conv_kernel_f32)
 
     constexpr static int sampledPointsPerPixel = MKLDNNDeformableConvolutionNode::sampledPointsPerPixel;
 
-    explicit jit_uni_def_conv_kernel_f32(const jit_def_conv_params& jcp) : jit_uni_def_conv_kernel(jcp), jit_generator() {}
+    explicit jit_uni_def_conv_kernel_f32(const jit_def_conv_params& jcp) : jit_uni_def_conv_kernel(jcp), jit_kernel() {}
 
     void create_ker() override {
         jit_generator::create_kernel();
@@ -322,6 +323,10 @@ private:
                         uni_vmovq(xmm_v2_off, qword[aux_reg_sampled_offs + ind_off_hl * jcp_.typesize_sampled_offsets]);
                         uni_vmovq(xmm_v3_off, qword[aux_reg_sampled_offs + ind_off_lh * jcp_.typesize_sampled_offsets]);
                         uni_vmovq(xmm_v4_off, qword[aux_reg_sampled_offs + ind_off_hh * jcp_.typesize_sampled_offsets]);
+                        // // // print_str("\nxmm_v2=");
+                        // cout << "off_reg_val=";
+                        // cout.print<int[1]>(xmm_v1_off) << "\n";
+                        // // // print_str("\n");
 
                         // w's computation
                         uni_vbroadcastss(vmm_w1, dword[aux_reg_sampled_wei + ind_off_ll * jcp_.typesize_sampled_wei]);
@@ -366,6 +371,22 @@ private:
                             add(reg_tmp_64, aux2_reg_input);
                             uni_vmovups(vmm_v4, ptr[reg_tmp_64]);
                             uni_vmulps(vmm_v4, vmm_v4, vmm_w4);
+
+                            // // print_str("\nxmm_v2=");
+                            // cout << "\n";
+                            // cout << "input_reg_val=";
+
+                            // cout.print<float[isa_traits<isa>::reg::length]>(vmm_v1) << "\n";
+
+                            // // cout.print<float[4]>(vmm_v1) << "\n";
+
+                            // cout << "regval2=";
+                            // cout.print<float[4]>(vmm_v2) << "\n";
+                            // cout << "regval3=";
+                            // cout.print<float[4]>(vmm_v3) << "\n";
+                            // cout << "regval4=";
+                            // cout.print<float[4]>(vmm_v4) << "\n";
+                            // print_str("\n");
 
                             uni_vaddps(vmm_v1, vmm_v1, vmm_v2);
                             uni_vaddps(vmm_v1, vmm_v1, vmm_v3);
@@ -441,6 +462,7 @@ private:
     }
 
     void store_output(int ow_step, int oc_blocks_step, int oc_step) {
+        // return;
         int repeats = isa == cpu::x64::sse41 && oc_step > (jcp_.oc_block / 2) ? 2 : 1;
 
         if (jcp_.with_bias) {

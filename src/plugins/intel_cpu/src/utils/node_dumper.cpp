@@ -26,6 +26,10 @@ static void formatNodeName(std::string& name) {
 }
 
 static bool shouldBeDumped(const MKLDNNNodePtr& node, const Config& config, const std::string& portsKind) {
+    return false;
+    if (NameFromType(node->getType()) == "DeformableConvolution") {
+        return true;
+    }
     const auto& dumpFilters = config.blobDumpFilters;
 
     if (dumpFilters.empty())
