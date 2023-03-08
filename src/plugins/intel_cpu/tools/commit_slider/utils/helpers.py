@@ -169,7 +169,8 @@ def runCommandList(commit, cfgData, enforceClean=False):
         )
         proc = subprocess.Popen(
             formattedCmd, cwd=cwd, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT
+            stderr=subprocess.STDOUT,
+            shell=True
         )
         for line in proc.stdout:
             # decode if line is byte-type
